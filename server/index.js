@@ -7,7 +7,13 @@ import { fileStorage } from './storage.js';
 export function createServer({ game = new Game() } = {}) {
   let queue = Promise.resolve();
   const files = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'] };
+  for (const name of ['analysis-worker.js', 'local-analysis.js']) files[`/${name}`] = [name, 'text/javascript'];
+  for (const name of ['stockfish.js', 'stockfish.worker.js', 'stockfish.wasm', 'Copying.txt']) {
+    files[`/engine/${name}`] = [`../node_modules/fairy-stockfish-nnue.wasm/${name}`, name.endsWith('.wasm') ? 'application/wasm' : name.endsWith('.js') ? 'text/javascript' : 'text/plain'];
+  }
   const server = http.createServer(async (req, res) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
     const json = (status, value) => {
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify(value));

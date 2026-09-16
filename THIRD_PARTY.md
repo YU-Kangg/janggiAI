@@ -1,5 +1,14 @@
 # 외부 소프트웨어 기록
 
+## fairy-stockfish-nnue.wasm 1.1.12
+
+- 공식 브라우저 탐색 엔진. GPL-3.0, Fabian Fichter 및 기여자.
+- [대응 소스 및 빌드 지침](https://github.com/fairy-stockfish/fairy-stockfish.wasm/tree/1.1.12), 태그 커밋 `b2e693ef1e111233ce3fb40685921708b3276ed6`.
+- npm 배포 파일을 수정 없이 `/engine/`의 명시된 경로로 제공합니다. 버전·무결성은 package-lock.json에 고정.
+- 라이선스 원문은 패키지의 `Copying.txt`를 `/engine/Copying.txt`로 제공하며 UI에서 소스와 함께 링크합니다.
+- 장기 전용 NNUE 파일은 배포하지 않으며 고전 평가를 사용합니다.
+- 테스트용 playwright-core 1.58.2는 Apache-2.0이며 브라우저로 배포하지 않습니다.
+
 ## Fairy-Stockfish / 장기 NNUE
 
 - 저작자: Fabian Fichter 및 Fairy-Stockfish 기여자.

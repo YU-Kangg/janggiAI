@@ -45,7 +45,7 @@ export class Game {
   snapshot() {
     this.state ??= rulePosition(this.moves, initialFen(this.setup));
     return {
-      ...this.state, setup: { ...this.setup }, moves: [...this.moves], revision: this.revision, variant: 'janggi',
+      ...this.state, initialFen: initialFen(this.setup), setup: { ...this.setup }, moves: [...this.moves], revision: this.revision, variant: 'janggi',
       mode: this.mode, humanSide: this.humanSide,
       canUndo: this.mode === 'ai' ? this.lastHumanMove() >= 0 : this.moves.length > 0,
       ai: { status: this.aiStatus, error: this.aiError },

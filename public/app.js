@@ -1,4 +1,7 @@
+import { analyze } from './local-analysis.js';
 const $ = id => document.getElementById(id);
+let analysisJob = null;
+function cancelAnalysis() { analysisJob?.cancel(); analysisJob = null; }
 const names = { k: '궁', a: '사', r: '차', n: '마', b: '상', c: '포', p: '졸' };
 let game, selected = null, suggestion = null, busy = false;
 let review = null;
@@ -72,7 +75,8 @@ function renderBoard(game, live) {
   $('undo').textContent = game.mode === 'ai' ? '내 이전 차례로 무르기' : '한 수 무르기';
   $('reset').disabled = busy || !!review;
   $('new-game').disabled = busy || !!review;
-  $('recommend').disabled = busy || !!review || aiTurn || !game.legalMoves.length;
+  $('recommend').disabled = busy || !!analysisJob || !!review || aiTurn || !game.legalMoves.length;
+  $('cancel-analysis').hidden = !analysisJob;
   $('cancel-ai').hidden = game.ai.status !== 'thinking';
   $('cancel-ai').disabled = busy;
   $('resume-ai').hidden = !['paused', 'error'].includes(game.ai.status);
@@ -107,6 +111,7 @@ async function request(path, data) {
 
 async function act(action, data = {}) {
   if (busy) return;
+  cancelAnalysis();
   busy = true; $('error').textContent = ''; render();
   try {
     const result = await request(action, { ...data, revision: game.revision });
@@ -132,13 +137,35 @@ $('new-game').onclick = () => {
     act('reset', { setup: { cho: $('cho-setup').value, han: $('han-setup').value }, mode: $('mode').value, humanSide: $('human-side').value });
   }
 };
-$('recommend').onclick = () => act('recommend');
+$('recommend').onclick = async () => {
+  if (analysisJob || busy || review || !game?.legalMoves.length) return;
+  if (!crossOriginIsolated || typeof SharedArrayBuffer === 'undefined') {
+    $('error').textContent = '기기 분석에는 보안 연결(HTTPS 또는 localhost)과 지원 브라우저가 필요합니다.';
+    return;
+  }
+  const position = game;
+  $('error').textContent = ''; suggestion = null;
+  $('advice').textContent = '이 기기에 분석 엔진을 불러오고 있습니다…';
+  const job = analyze(position, { onReady: () => { $('advice').textContent = '이 기기의 CPU로 분석하고 있습니다…'; } });
+  analysisJob = job; render();
+  try {
+    const result = await job.promise;
+    if (analysisJob !== job || game.revision !== position.revision || review) return;
+    suggestion = result.move;
+    $('advice').textContent = `추천: ${describe(result.move)} · 기기 분석 · 깊이 ${result.depth} · 로딩 ${result.loadMs}ms / 전체 ${result.totalMs}ms`;
+  } catch (error) {
+    if (analysisJob === job && error.name !== 'AbortError') $('error').textContent = error.message;
+  } finally { if (analysisJob === job) analysisJob = null; render(); }
+};
+$('cancel-analysis').onclick = () => { cancelAnalysis(); $('advice').textContent = '기기 분석을 취소했습니다.'; render(); };
+document.addEventListener('visibilitychange', () => { if (document.hidden && analysisJob) { cancelAnalysis(); $('advice').textContent = '화면을 떠나 기기 분석을 중단했습니다.'; render(); } });
 $('cancel-ai').onclick = () => act('cancel-ai');
 $('resume-ai').onclick = () => act('resume-ai');
 $('mode').onchange = () => render();
 
 async function showReview(ply) {
   if (busy || !game) return;
+  cancelAnalysis();
   busy = true; selected = null; suggestion = null; $('error').textContent = ''; render();
   try {
     review = await request('review', { ply, revision: game.revision });
@@ -153,6 +180,7 @@ $('review-live').onclick = () => { review = null; $('advice').textContent = '현
 
 function receive(next) {
   if (game && next.revision <= game.revision) return;
+  cancelAnalysis();
   if (!game) {
     for (const side of ['cho', 'han']) $(`${side}-setup`).value = next.setup[side];
     $('mode').value = next.mode;
