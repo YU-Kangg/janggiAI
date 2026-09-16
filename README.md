@@ -1,5 +1,7 @@
 # 장기 연습판 — 5단계 브라우저 분석 연결
 
+모바일 앱 전환을 위한 **Godot 4 시제품**을 `godot/`에 추가했습니다. [실행 방법과 Android 진행 상태](godot/README.md)를 참고하세요.
+
 기본 `janggi` 규칙을 사용하는 장기 앱의 첫 실행 가능한 단위입니다.
 Node.js 내장 HTTP 서버와 Fairy-Stockfish 공식 규칙 바인딩 `ffish-es6@0.7.10`을 사용합니다.
 

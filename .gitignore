@@ -6,3 +6,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+godot/.godot/
+godot/export_credentials.cfg
+godot/build/
+*.keystore
