@@ -37,8 +37,23 @@ $env:GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD = 'android'
 $outputDirectory = Join-Path $projectRoot 'godot/build'
 New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 $apk = Join-Path $outputDirectory 'janggi-debug.apk'
-& $godot --headless --path (Join-Path $projectRoot 'godot') --export-debug 'Android Debug' $apk
-if ($LASTEXITCODE -ne 0) { throw 'Android export failed' }
+$nativeBuild = Join-Path $projectRoot 'scripts/build-native.ps1'
+& powershell -NoProfile -ExecutionPolicy Bypass -File $nativeBuild
+if ($LASTEXITCODE -ne 0) { throw 'Native engine build failed' }
+$extension = Join-Path $projectRoot 'godot/native/janggi.gdextension'
+$extensionUid = "$extension.uid"
+$extensionList = Join-Path $projectRoot 'godot/.godot/extension_list.cfg'
+$extensionListBackup = if (Test-Path -LiteralPath $extensionList) { [IO.File]::ReadAllBytes($extensionList) } else { $null }
+Copy-Item -LiteralPath (Join-Path $projectRoot 'native/janggi.gdextension.example') -Destination $extension -Force
+try {
+    & $godot --headless --path (Join-Path $projectRoot 'godot') --export-debug 'Android Debug' $apk
+    if ($LASTEXITCODE -ne 0) { throw 'Android export failed' }
+} finally {
+    if (Test-Path -LiteralPath $extension) { Remove-Item -LiteralPath $extension -Force }
+    if (Test-Path -LiteralPath $extensionUid) { Remove-Item -LiteralPath $extensionUid -Force }
+    if ($null -ne $extensionListBackup) { [IO.File]::WriteAllBytes($extensionList, $extensionListBackup) }
+    elseif (Test-Path -LiteralPath $extensionList) { Remove-Item -LiteralPath $extensionList -Force }
+}
 $signer = Get-ChildItem -LiteralPath "$sdk/build-tools" -Filter apksigner.bat -Recurse | Select-Object -First 1
 if (!$signer) { throw 'apksigner missing' }
 & $signer.FullName verify --verbose $apk

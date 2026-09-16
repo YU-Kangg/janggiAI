@@ -2,9 +2,10 @@ import os
 
 env = SConscript('../.local/godot-cpp/SConstruct')
 env.Append(CPPPATH=['../.local/fairy-source/src'])
-env.Append(CPPDEFINES=['LARGEBOARDS', 'ALLVARS', 'IS_64BIT', 'NNUE_EMBEDDING_OFF', 'NDEBUG'])
+env.Append(CPPDEFINES=['LARGEBOARDS', 'ALLVARS', 'IS_64BIT', 'PRECOMPUTED_MAGICS', 'NNUE_EMBEDDING_OFF', 'NDEBUG'])
 env.Append(CXXFLAGS=['-std=c++17'])
 env.Append(LINKFLAGS=['-Wl,-z,max-page-size=16384', '-static-libstdc++'])
+env.Append(LIBS=['log'])
 engine_files = '''benchmark bitbase bitboard endgame evaluate material misc movegen movepick pawns position psqt search thread timeman tt uci ucioption tune partner parser piece variant xboard syzygy/tbprobe nnue/evaluate_nnue nnue/features/half_ka_v2 nnue/features/half_ka_v2_variants'''.split()
 objects = []
 for name in engine_files:

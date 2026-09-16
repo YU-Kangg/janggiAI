@@ -1,5 +1,7 @@
 extends Control
 
+const LocalEngine = preload("res://local_engine.gd")
+
 var state: Dictionary = {}
 var selected := ""
 var pending := false
@@ -17,6 +19,11 @@ var current_path := ""
 var review: Dictionary = {}
 var history := OptionButton.new()
 var review_buttons: Array[Button] = []
+var device_engine = LocalEngine.new()
+var device_recommend := Button.new()
+var device_cancel := Button.new()
+var device_request: Dictionary = {}
+var recommended_move := ""
 
 func _ready() -> void:
 	var margin := MarginContainer.new()
@@ -55,6 +62,15 @@ func _ready() -> void:
 	add_action(actions, "무르기", func(): act("undo"))
 	add_action(actions, "AI 취소", func(): act("cancel-ai"))
 	add_action(actions, "AI 재개", func(): act("resume-ai"))
+	device_recommend.text = "기기 추천"
+	device_recommend.custom_minimum_size.y = 44
+	device_recommend.pressed.connect(start_device_recommendation)
+	actions.add_child(device_recommend)
+	device_cancel.text = "추천 취소"
+	device_cancel.custom_minimum_size.y = 44
+	device_cancel.pressed.connect(cancel_device_recommendation)
+	actions.add_child(device_cancel)
+	device_engine.completed.connect(on_device_recommendation)
 	column.add_child(history)
 	history.item_selected.connect(func(index: int): show_review(index))
 	var navigation := HFlowContainer.new()
@@ -83,6 +99,13 @@ func _ready() -> void:
 	timer.start()
 	render_board()
 	request_state()
+
+func _exit_tree() -> void:
+	device_engine.shutdown()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_PAUSED:
+		cancel_device_recommendation()
 
 func add_action(parent: Node, caption: String, callback: Callable) -> void:
 	var button := Button.new()
@@ -134,6 +157,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		message.text = "장기 서버 응답이 아닙니다."
 		return
 	if current_path == "review":
+		cancel_device_recommendation(false)
 		review = payload
 		selected = ""
 		message.text = "복기 중에는 착수할 수 없습니다. 현재 대국으로 돌아오세요."
@@ -142,6 +166,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 	var changed: bool = state.is_empty() or payload.revision != state.revision or payload.fen != state.fen
 	state = payload
 	if changed:
+		cancel_device_recommendation(false)
 		review = {}
 		selected = ""
 	if current_path != "game" or changed:
@@ -152,6 +177,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 func act(action: String, data: Dictionary = {}) -> void:
 	if state.is_empty() or pending or not review.is_empty():
 		return
+	cancel_device_recommendation(false)
 	data["revision"] = state.revision
 	send(action, data)
 
@@ -161,12 +187,14 @@ func view_ply() -> int:
 func show_review(ply: int) -> void:
 	if pending or state.is_empty() or ply < 0 or ply > state.moves.size():
 		return
+	cancel_device_recommendation(false)
 	selected = ""
 	send("review", {"revision": state.revision, "ply": ply})
 
 func return_live() -> void:
 	if pending:
 		return
+	cancel_device_recommendation(false)
 	review = {}
 	selected = ""
 	message.text = ""
@@ -195,6 +223,49 @@ func choose(square: String, piece: String) -> void:
 	selected = square if own and selected != square else ""
 	render_board()
 
+func start_device_recommendation() -> void:
+	var position: Dictionary = state if review.is_empty() else review
+	if position.is_empty() or position.outcome.over or position.legalMoves.is_empty() or device_engine.busy():
+		return
+	recommended_move = ""
+	device_request = {"revision": state.revision, "fen": position.fen}
+	var moves := PackedStringArray(position.moves)
+	if not device_engine.start(str(position.initialFen), moves):
+		message.text = "이 기기에서는 추천 엔진을 시작할 수 없습니다."
+		device_request = {}
+	else:
+		message.text = "휴대폰에서 추천 수를 계산 중…"
+	render_board()
+
+func cancel_device_recommendation(show_message := true) -> void:
+	if device_engine.busy():
+		device_engine.cancel()
+		if show_message:
+			message.text = "기기 추천을 취소했습니다."
+	device_request = {}
+	recommended_move = ""
+
+func on_device_recommendation(result: Dictionary) -> void:
+	var position: Dictionary = state if review.is_empty() else review
+	var expected := device_request
+	device_request = {}
+	if expected.is_empty():
+		render_board()
+		return
+	var move := str(result.get("move", ""))
+	if result.has("error"):
+		message.text = "기기 추천 실패: %s" % str(result.error)
+	elif state.revision != expected.revision or position.fen != expected.fen:
+		message.text = "대국 상태가 바뀌어 이전 추천을 버렸습니다."
+	elif result.get("fen", "") != position.fen or not position.legalMoves.has(move):
+		message.text = "기기 엔진의 결과가 현재 장기판과 맞지 않습니다."
+	else:
+		recommended_move = move
+		var pair := split_move(move)
+		message.text = "기기 추천 %s → %s · 깊이 %d · %dms" % [pair[0], pair[1], int(result.get("depth", 0)), int(result.get("elapsed_ms", 0))]
+		print("JANGGI_NATIVE_RESULT move=%s depth=%d elapsed_ms=%d" % [move, int(result.get("depth", 0)), int(result.get("elapsed_ms", 0))])
+	render_board()
+
 func render_board() -> void:
 	render_position(state if review.is_empty() else review)
 
@@ -205,6 +276,8 @@ func render_position(state: Dictionary) -> void:
 	if state.is_empty():
 		for button in action_buttons:
 			button.disabled = true
+		device_recommend.disabled = true
+		device_cancel.disabled = true
 		return
 	for child in grid.get_children():
 		grid.remove_child(child)
@@ -236,6 +309,11 @@ func render_position(state: Dictionary) -> void:
 			button.modulate = Color(0.55, 0.8, 1) if piece != "" and piece == piece.to_upper() else Color(1, 0.7, 0.65)
 			if square == selected or (selected != "" and state.legalMoves.has(selected + square)):
 				button.modulate = Color(0.7, 1, 0.5)
+			var recommendation := split_move(recommended_move)
+			if recommendation.size() == 2 and square == recommendation[0]:
+				button.modulate = Color(1, 0.85, 0.35)
+			elif recommendation.size() == 2 and square == recommendation[1]:
+				button.modulate = Color(0.45, 1, 0.65)
 			button.disabled = not review.is_empty() or (pending and current_path != "game") or ai_turn or state.outcome.over
 			button.pressed.connect(choose.bind(square, piece))
 			grid.add_child(button)
@@ -253,6 +331,8 @@ func render_position(state: Dictionary) -> void:
 	action_buttons[2].disabled = action_buttons[2].disabled or not state.canUndo
 	action_buttons[3].disabled = action_buttons[3].disabled or state.ai.status != "thinking"
 	action_buttons[4].disabled = action_buttons[4].disabled or not state.ai.status in ["paused", "error"]
+	device_recommend.disabled = not device_engine.available() or device_engine.busy() or state.outcome.over or state.legalMoves.is_empty()
+	device_cancel.disabled = not device_engine.busy()
 	if not review.is_empty():
 		status.text = "복기 %d/%d수 · %s" % [view_ply(), self.state.moves.size(), status.text]
 	history.clear()

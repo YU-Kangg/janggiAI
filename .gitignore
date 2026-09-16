@@ -12,4 +12,5 @@ godot/build/
 *.keystore
 godot/native/bin/
 godot/native/*.gdextension
+godot/native/*.gdextension.uid
 native/.sconsign*

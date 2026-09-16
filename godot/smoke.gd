@@ -22,6 +22,7 @@ func run() -> void:
 	await wait_idle()
 	check(not app.state.is_empty(), "initial HTTP connection")
 	check(app.squares.size() == 90, "90 board squares")
+	check(not app.device_engine.available() and app.device_recommend.disabled, "desktop fallback without Android engine")
 	app.act("reset", {"mode": "ai", "humanSide": "cho"})
 	await wait_idle()
 	app.squares["a4"].pressed.emit()
