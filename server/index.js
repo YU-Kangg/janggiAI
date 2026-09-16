@@ -2,6 +2,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { Game } from './game.js';
+import { fileStorage } from './storage.js';
 
 export function createServer({ game = new Game() } = {}) {
   let queue = Promise.resolve();
@@ -21,7 +22,7 @@ export function createServer({ game = new Game() } = {}) {
         res.writeHead(200, { 'Content-Type': `${type}; charset=utf-8` });
         return res.end(body);
       }
-      const action = /^\/api\/(move|undo|reset|recommend|cancel-ai|resume-ai)$/.exec(req.url)?.[1];
+      const action = /^\/api\/(move|undo|reset|recommend|cancel-ai|resume-ai|review)$/.exec(req.url)?.[1];
       if (!(req.method === 'GET' && req.url === '/api/game') && !(req.method === 'POST' && action)) {
         return json(404, { error: '요청 경로를 찾을 수 없습니다.' });
       }
@@ -47,7 +48,8 @@ export function createServer({ game = new Game() } = {}) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT || 3000);
-  const server = createServer();
+  const storage = fileStorage(fileURLToPath(new URL('../.local/current-game.json', import.meta.url)));
+  const server = createServer({ game: new Game({ storage }) });
   server.on('error', error => { console.error(error.message); process.exitCode = 1; });
   server.listen(port, '127.0.0.1', () => console.log(`장기 연습판: http://127.0.0.1:${port}`));
 }

@@ -40,6 +40,14 @@
         <button id="recommend" disabled>현재 장면 추천 받기</button>
         <p id="advice" aria-live="polite">추천 수를 누르면 출발점과 도착점을 표시합니다.</p>
         <h2>착수 기록</h2>
+        <div class="actions" aria-label="복기 이동">
+          <button id="review-first" disabled>처음</button>
+          <button id="review-prev" disabled>이전 수</button>
+          <button id="review-next" disabled>다음 수</button>
+          <button id="review-live" disabled>현재 대국</button>
+        </div>
+        <p id="review-state" role="status" aria-live="polite"></p>
+        <p class="note">현재 대국 하나를 자동 저장합니다. 새 대국은 저장된 기보를 교체합니다. 복기 중 새 착수가 도착하면 현재 대국으로 돌아옵니다.</p>
         <ol id="history"></ol>
         <p class="note">기본 janggi 규칙입니다. 빅장은 한수쉼으로 수락할 수 있으며 점수로 판정합니다. 양측 연속 한수쉼·반복 등 엔진의 종료 조건을 자동 적용합니다. 한 점수에는 후수 보정 1.5점이 포함됩니다.</p>
       </aside>

@@ -14,7 +14,27 @@ export class Game {
   aiError = null;
   aiJob = null;
 
-  constructor({ recommendMove = recommend } = {}) { this.recommendMove = recommendMove; }
+  constructor({ recommendMove = recommend, storage = null } = {}) {
+    this.recommendMove = recommendMove;
+    this.storage = storage;
+    const saved = storage?.load();
+    if (saved) {
+      if (saved.version !== 1 || saved.variant !== 'janggi' || !Array.isArray(saved.moves)
+        || !['practice', 'ai'].includes(saved.mode) || !['cho', 'han'].includes(saved.humanSide)
+        || !Number.isSafeInteger(saved.revision) || saved.revision < 0) throw new Error('저장된 기보 형식이 올바르지 않습니다.');
+      this.state = rulePosition(saved.moves, initialFen(saved.setup));
+      this.moves = [...saved.moves];
+      this.setup = { ...saved.setup };
+      this.mode = saved.mode;
+      this.humanSide = saved.humanSide;
+      this.revision = saved.revision + 1;
+      if (this.mode === 'ai' && !this.state.outcome.over && this.state.turn !== this.humanSide) this.aiStatus = 'paused';
+    }
+  }
+
+  persist(moves, setup = this.setup, mode = this.mode, humanSide = this.humanSide) {
+    this.storage?.save({ version: 1, variant: 'janggi', moves, setup, mode, humanSide, revision: this.revision + 1 });
+  }
 
   lastHumanMove() {
     const parity = this.humanSide === 'cho' ? 0 : 1;
@@ -56,6 +76,7 @@ export class Game {
         if (!this.state.legalMoves.includes(result.move)) throw new Error('합법 수가 아닌 AI 응수를 받았습니다.');
         const nextMoves = [...this.moves, result.move];
         const nextState = rulePosition(nextMoves, fen);
+        this.persist(nextMoves);
         this.moves = nextMoves;
         this.state = nextState;
         this.aiJob = null;
@@ -75,6 +96,11 @@ export class Game {
       throw Object.assign(new Error('다른 화면에서 기보가 변경되었습니다. 새로고침하세요.'), { status: 409 });
     }
     const state = this.snapshot();
+    if (action === 'review') {
+      if (!Number.isInteger(data.ply) || data.ply < 0 || data.ply > this.moves.length) throw fail('복기할 수 번호가 올바르지 않습니다.', 400);
+      const moves = this.moves.slice(0, data.ply);
+      return { ...state, ...rulePosition(moves, initialFen(this.setup)), moves, legalMoves: [], canUndo: false };
+    }
     if (action === 'cancel-ai') {
       if (!this.aiJob) throw fail('진행 중인 AI 응수가 없습니다.');
       this.stopAi();
@@ -125,6 +151,7 @@ export class Game {
     else throw Object.assign(new Error('지원하지 않는 동작입니다.'), { status: 404 });
     // Commit only after the engine has successfully reconstructed the new board.
     const nextState = rulePosition(nextMoves, initialFen(nextSetup));
+    this.persist(nextMoves, nextSetup, nextMode, nextSide);
     this.stopAi();
     this.moves = nextMoves;
     this.setup = { cho: nextSetup.cho, han: nextSetup.han };
