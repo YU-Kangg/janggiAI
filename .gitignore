@@ -1,0 +1,8 @@
+.local/
+node_modules/
+*.log
+.idea/
+*.iml
+.env
+.env.*
+!.env.example

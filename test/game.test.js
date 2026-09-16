@@ -1,0 +1,51 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { createServer } from '../server/index.js';
+
+test('실제 janggi 엔진: 합법 수, 한수쉼, 추천, 되돌리기, 요청 충돌', async t => {
+  const server = createServer();
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const call = async (path, body) => {
+    const response = await fetch(`${base}/api/${path}`, body ? { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } } : {});
+    return { status: response.status, data: await response.json() };
+  };
+  const initial = await call('game');
+  assert.equal(initial.status, 200);
+  assert.equal(initial.data.variant, 'janggi');
+  assert.equal(initial.data.turn, 'cho');
+  assert.equal(initial.data.inCheck, false);
+  assert.equal(initial.data.legalMoves.length, 32);
+  assert.ok(initial.data.legalMoves.includes('e2e2'));
+  assert.ok(!initial.data.legalMoves.includes('b3b8'), '포로 상대 포를 잡을 수 없음');
+  assert.equal((await call('move', { revision: 0, move: 'a1a10' })).status, 400);
+  assert.deepEqual((await call('game')).data, initial.data, '불법 수는 상태를 변경하지 않음');
+
+  const moved = await call('move', { revision: 0, move: 'a4b4' });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.data.turn, 'han');
+  assert.deepEqual(moved.data.moves, ['a4b4']);
+  assert.notEqual(moved.data.fen, initial.data.fen);
+  assert.equal((await call('move', { revision: 0, move: 'a7b7' })).status, 409);
+  const ai = await call('recommend', { revision: 1 });
+  assert.equal(ai.status, 200);
+  assert.ok(moved.data.legalMoves.includes(ai.data.move));
+  assert.equal((await call('game')).data.revision, 1, '추천만으로 착수되지 않음');
+  const passed = await call('move', { revision: 1, move: 'e9e9' });
+  assert.equal(passed.status, 200);
+  assert.equal(passed.data.turn, 'cho');
+  const undo = await call('undo', { revision: 2 });
+  assert.equal(undo.data.fen, moved.data.fen);
+  const races = await Promise.all([call('move', { revision: 3, move: 'a7b7' }), call('move', { revision: 3, move: 'i7h7' })]);
+  assert.deepEqual(races.map(result => result.status).sort(), [200, 409]);
+  const reset = await call('reset', { revision: 4 });
+  assert.equal(reset.data.fen, initial.data.fen);
+  assert.deepEqual(reset.data.moves, []);
+  assert.equal((await fetch(`${base}/`)).status, 200);
+  assert.equal((await fetch(`${base}/../package.json`)).status, 404);
+  assert.equal((await fetch(`${base}/api/reset`, { method: 'POST', body: '{broken' })).status, 400);
+  assert.equal((await fetch(`${base}/api/reset`, { method: 'POST', headers: { Origin: 'https://example.com' } })).status, 403);
+});

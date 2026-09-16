@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>장기 연습판</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main>
+    <header><h1>장기 연습판</h1><p>기본 janggi · 직접 연습 또는 AI 상대 대국</p></header>
+    <p id="status" role="status" aria-live="polite">장기 엔진에 연결하고 있습니다…</p>
+    <div class="layout">
+      <section aria-label="장기판">
+        <div id="board" class="board">
+          <svg class="lines" viewBox="0 0 9 10" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div id="squares" class="squares"></div>
+        </div>
+        <div class="actions">
+          <button id="pass" disabled>한수쉼</button>
+          <button id="undo" disabled>한 수 무르기</button>
+          <button id="reset" disabled>처음부터</button>
+          <button id="cancel-ai" hidden>AI 생각 중 취소</button>
+          <button id="resume-ai" hidden>AI 응수 재개</button>
+        </div>
+      </section>
+      <aside>
+        <h2>대국 방식</h2>
+        <label>방식 <select id="mode" disabled><option value="practice">양쪽 직접 조작</option><option value="ai">AI 상대 대국</option></select></label>
+        <label>내 진영 <select id="human-side" disabled><option value="cho">초 (먼저 두기)</option><option value="han">한 (나중에 두기)</option></select></label>
+        <p id="ai-state" role="status" aria-live="polite"></p>
+        <h2>새 대국 차림</h2>
+        <p class="note">각 진영이 바라보는 왼쪽 → 오른쪽 마·상 순서입니다. 아래 선택은 새 대국에 적용됩니다.</p>
+        <label>초 <select id="cho-setup" disabled></select></label>
+        <label>한 <select id="han-setup" disabled></select></label>
+        <button id="new-game" disabled>선택한 설정으로 새 대국</button>
+        <p id="points"></p>
+        <h2>AI 추천</h2>
+        <button id="recommend" disabled>현재 장면 추천 받기</button>
+        <p id="advice" aria-live="polite">추천 수를 누르면 출발점과 도착점을 표시합니다.</p>
+        <h2>착수 기록</h2>
+        <ol id="history"></ol>
+        <p class="note">기본 janggi 규칙입니다. 빅장은 한수쉼으로 수락할 수 있으며 점수로 판정합니다. 양측 연속 한수쉼·반복 등 엔진의 종료 조건을 자동 적용합니다. 한 점수에는 후수 보정 1.5점이 포함됩니다.</p>
+      </aside>
+    </div>
+    <p id="error" role="alert"></p>
+  </main>
+</body>
+</html>
