@@ -1,0 +1,8 @@
+[configuration]
+entry_symbol = "janggi_library_init"
+compatibility_minimum = "4.4"
+reloadable = false
+
+[libraries]
+android.arm64 = "res://native/bin/libjanggi.android.arm64.so"
+android.x86_64 = "res://native/bin/libjanggi.android.x86_64.so"

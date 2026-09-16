@@ -10,3 +10,6 @@ godot/.godot/
 godot/export_credentials.cfg
 godot/build/
 *.keystore
+godot/native/bin/
+godot/native/*.gdextension
+native/.sconsign*

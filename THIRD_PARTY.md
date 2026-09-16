@@ -1,5 +1,11 @@
 # 외부 소프트웨어 기록
 
+## Android 네이티브 개발 기반
+
+- Fairy-Stockfish 및 godot-cpp의 정확한 소스 커밋과 빌드 방법: [native/README.md](native/README.md).
+- 어댑터는 GPL-3.0-or-later, Fairy-Stockfish는 GPLv3, godot-cpp는 MIT.
+- 현재 생성 라이브러리는 로컬 빌드 검증용이며 APK에 포함하지 않습니다. 앱 통합 단계에서 라이선스 고지와 대응 소스 제공을 함께 준비합니다.
+
 ## fairy-stockfish-nnue.wasm 1.1.12
 
 - 공식 브라우저 탐색 엔진. GPL-3.0, Fabian Fichter 및 기여자.
