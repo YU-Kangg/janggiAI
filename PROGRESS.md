@@ -89,8 +89,18 @@
 - Android export 프리셋 준비. APK 시도는 SDK·export templates 누락으로 실패. APK·실기기 검증 미완료.
 - 고양이 아트·애니메이션·Godot 복기 UI·기기 내 AI는 아직 미구현.
 
-1. **Godot 다음 단위: Android 실행** — SDK·export templates 준비, APK 빌드, USB 연결·터치·레이아웃 실기기 검증.
+### Android 디버그 빌드 (완료)
+
+- 공식 Godot 4.7.2 Android 템플릿과 Android Platform-Tools 37.0.1 / Build-Tools 35.0.1 준비. 원본 체크섬 검증.
+- `.local` 개발 도구·설정·디버그 키 사용. `scripts/build-android.ps1`로 재빌드 및 서명 검사.
+- Android 텍스처 설정과 임시 고양이 앱 아이콘 추가. `godot/build/janggi-debug.apk` 생성 (약 57MB).
+- APK 검증: 서명 v2/v3 통과, 패키지 com.janggiai.prototype, 인터넷 권한, ARM64/x86_64, min SDK 24 / target 36.
+- Godot 실제 서버 연동 회귀 테스트 통과, PowerShell 구문 검증 및 APK의 테스트·키·기보 제외 확인.
+- `scripts/run-android.ps1`: 연결된 기기 선택, APK 설치, adb reverse, 앱 실행. 실제 기기 미연결로 설치·실행 미검증.
+- 기존 Godot 시제품의 APK 실패 항목은 해결. 실기기 터치·화면·통신 검증은 남음.
+
+1. **Godot 다음 단위: Android 실기기 검증** — USB 연결·설치·터치·레이아웃·서버 응수 확인.
 2. **Godot 후속 기능** — 복기 화면·기기 내 엔진 연결·고양이 연출. 기존 웹 휴대폰 검증은 보류.
 3. **6단계: 서버 정밀 리뷰** — 작업 큐, 실제 수와 추천 수 비교, 중요 장면 추출.
 
-각 단계가 커지면 더 작은 단위로 나눕니다. 다음 요청에서는 Android 실행 환경부터 이어갑니다.
+각 단계가 커지면 더 작은 단위로 나눕니다. 다음 요청에서는 Android 실기기 검증부터 이어갑니다.

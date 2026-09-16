@@ -35,16 +35,41 @@ Godot 실행 파일은 위 로컬 경로 또는 `JANGGI_GODOT_PATH` 환경 변�
 ## Android 진행 상태
 
 `Android Debug` 내보내기 프리셋을 추가했습니다. 인터넷 권한과 arm64/x86_64 아키텍처를 설정했습니다.
-APK 내보내기를 시도했지만 **Android SDK와 Godot 4.7.2 Android export templates가 없어 실패**했습니다.
-현재 PC의 Java 17은 확인했습니다. APK 생성·휴대폰 설치·실제 터치 테스트는 아직 하지 않았습니다.
+**디버그 APK 생성과 서명 검증을 완료했습니다.** 산출물: `godot/build/janggi-debug.apk` (약 57MB).
+Android 7.0/API 24 이상, ARM64 또는 x86_64 대상입니다. target SDK는 템플릿 기준 36입니다.
+현재 연결된 실기기가 없어 휴대폰 설치·실제 터치·서버 통신 테스트는 아직 하지 않았습니다.
 
-다음 단위에서 SDK/동일 버전 export templates를 설치하고 Godot Editor Settings에 SDK/JDK 경로를 지정합니다.
-설치 절차는 [공식 Android 내보내기 문서](https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_android.html)를 따릅니다.
-그 뒤 `build/` 폴더를 만들고 다음 명령으로 디버그 APK를 생성합니다.
+프로젝트 루트 PowerShell에서 다시 빌드합니다.
 
-```text
-godot --headless --path godot --export-debug "Android Debug" build/janggi-debug.apk
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-android.ps1
 ```
+
+이 PC의 개발 도구는 `.local/`에 두었습니다. Git에 도구·APK·서명 키는 포함하지 않습니다.
+- `.local/godot/`: Godot 4.7.2, `_sc_` 파일로 자체 editor_data 설정 사용.
+- `.local/android-sdk/platform-tools/`: 공식 platform-tools 37.0.1.
+- `.local/android-sdk/build-tools/35.0.1/`: 공식 Build-Tools 35.0.1.
+- `.local/android-templates/`: 공식 4.7.2 export templates에서 추출한 android_debug.apk / android_release.apk.
+- Java 17은 `JAVA_HOME` 또는 PATH의 java.exe에서 찾습니다. `-JavaSdkPath`로 지정할 수도 있습니다.
+
+일반 디버그 APK는 미리 빌드된 템플릿으로 생성하므로 이번에는 NDK/Gradle 소스 빌드 도구를 설치하지 않았습니다.
+Godot가 target SDK 36과 Build-Tools 35.0.1 버전 차이 안내를 출력하지만 APK 생성·서명 검사는 통과했습니다.
+스토어 AAB·플러그인·네이티브 라이브러리 빌드 환경은 별도 준비가 필요합니다.
+도구를 새로 준비할 때는 [Godot 공식 Android 문서](https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_android.html)와 [4.7.2 배포](https://github.com/godotengine/godot/releases/tag/4.7.2-stable)를 참고하세요.
+
+## 휴대폰에 설치하고 실행
+
+1. PC 장기 서버를 실행합니다: `node server/index.js`.
+2. Android 개발자 옵션에서 USB 디버깅을 켜고 케이블을 연결한 뒤, 휴대폰에서 PC 연결을 허용합니다.
+3. 프로젝트 루트에서 다음 명령을 실행합니다. APK 설치 → USB 포트 연결 → 앱 실행을 수행합니다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-android.ps1
+```
+
+여러 기기가 연결되어 있으면 `-Serial 기기번호`를 지정합니다. 연결·인증된 기기만 대상으로 합니다.
+기존 앱과 서명이 달라 설치가 실패하면 스크립트는 중단하며 기존 앱을 자동 삭제하지 않습니다.
+화면 표시·터치 착수·초/한 AI 응수·무르기·USB 분리 후 재연결을 실제 기기에서 확인해야 합니다.
 
 USB 디버깅을 허용한 Android 기기에서는 `adb reverse tcp:3000 tcp:3000`으로 PC 서버를 연결할 수 있습니다.
 이 경우 앱 주소는 `http://127.0.0.1:3000`을 유지합니다. reverse가 없으면 휴대폰의 localhost는 PC를 가리키지 않습니다.
