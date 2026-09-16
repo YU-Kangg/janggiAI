@@ -75,6 +75,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-android.ps1
 기존 앱과 서명이 달라 설치가 실패하면 스크립트는 중단하며 기존 앱을 자동 삭제하지 않습니다.
 화면 표시·터치 착수·초/한 AI 응수·무르기·USB 분리 후 재연결을 실제 기기에서 확인해야 합니다.
 
+앱은 설치되어 있지만 서버 연결만 끊겼다면 재설치 없이 포트 연결과 앱 실행만 복구할 수 있습니다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-android.ps1 -SkipInstall
+```
+
+스크립트는 ADB 서버를 백그라운드로 유지합니다. PC 재부팅, ADB 서버 종료 또는 USB 연결 해제 후에는 위 명령으로 다시 연결합니다.
+
 USB 디버깅을 허용한 Android 기기에서는 `adb reverse tcp:3000 tcp:3000`으로 PC 서버를 연결할 수 있습니다.
 이 경우 앱 주소는 `http://127.0.0.1:3000`을 유지합니다. reverse가 없으면 휴대폰의 localhost는 PC를 가리키지 않습니다.
 초기 검증은 USB 방식으로 진행하며 서버의 localhost 바인딩은 유지합니다.
