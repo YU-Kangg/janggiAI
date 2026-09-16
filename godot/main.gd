@@ -14,6 +14,9 @@ var squares: Dictionary = {}
 var timer := Timer.new()
 var new_game_dialog := ConfirmationDialog.new()
 var current_path := ""
+var review: Dictionary = {}
+var history := OptionButton.new()
+var review_buttons: Array[Button] = []
 
 func _ready() -> void:
 	var margin := MarginContainer.new()
@@ -52,6 +55,20 @@ func _ready() -> void:
 	add_action(actions, "무르기", func(): act("undo"))
 	add_action(actions, "AI 취소", func(): act("cancel-ai"))
 	add_action(actions, "AI 재개", func(): act("resume-ai"))
+	column.add_child(history)
+	history.item_selected.connect(func(index: int): show_review(index))
+	var navigation := HFlowContainer.new()
+	column.add_child(navigation)
+	for caption in ["처음", "이전 수", "다음 수", "현재 대국"]:
+		var button := Button.new()
+		button.text = caption
+		button.custom_minimum_size.y = 44
+		navigation.add_child(button)
+		review_buttons.append(button)
+	review_buttons[0].pressed.connect(func(): show_review(0))
+	review_buttons[1].pressed.connect(func(): show_review(view_ply() - 1))
+	review_buttons[2].pressed.connect(func(): show_review(view_ply() + 1))
+	review_buttons[3].pressed.connect(return_live)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
 	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
@@ -116,9 +133,16 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 	if not payload.has("fen") or not payload.has("legalMoves"):
 		message.text = "장기 서버 응답이 아닙니다."
 		return
+	if current_path == "review":
+		review = payload
+		selected = ""
+		message.text = "복기 중에는 착수할 수 없습니다. 현재 대국으로 돌아오세요."
+		render_board()
+		return
 	var changed: bool = state.is_empty() or payload.revision != state.revision or payload.fen != state.fen
 	state = payload
 	if changed:
+		review = {}
 		selected = ""
 	if current_path != "game" or changed:
 		message.text = ""
@@ -126,10 +150,27 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		render_board()
 
 func act(action: String, data: Dictionary = {}) -> void:
-	if state.is_empty() or pending:
+	if state.is_empty() or pending or not review.is_empty():
 		return
 	data["revision"] = state.revision
 	send(action, data)
+
+func view_ply() -> int:
+	return review.moves.size() if not review.is_empty() else state.get("moves", []).size()
+
+func show_review(ply: int) -> void:
+	if pending or state.is_empty() or ply < 0 or ply > state.moves.size():
+		return
+	selected = ""
+	send("review", {"revision": state.revision, "ply": ply})
+
+func return_live() -> void:
+	if pending:
+		return
+	review = {}
+	selected = ""
+	message.text = ""
+	render_board()
 
 func split_move(move: String) -> PackedStringArray:
 	var regex := RegEx.new()
@@ -145,7 +186,7 @@ func pass_turn() -> void:
 			return
 
 func choose(square: String, piece: String) -> void:
-	if pending:
+	if pending or not review.is_empty():
 		return
 	if selected != "" and selected != square and state.legalMoves.has(selected + square):
 		act("move", {"move": selected + square})
@@ -155,6 +196,12 @@ func choose(square: String, piece: String) -> void:
 	render_board()
 
 func render_board() -> void:
+	render_position(state if review.is_empty() else review)
+
+func render_position(state: Dictionary) -> void:
+	history.disabled = pending or self.state.is_empty()
+	for button in review_buttons:
+		button.disabled = pending or self.state.is_empty()
 	if state.is_empty():
 		for button in action_buttons:
 			button.disabled = true
@@ -189,7 +236,7 @@ func render_board() -> void:
 			button.modulate = Color(0.55, 0.8, 1) if piece != "" and piece == piece.to_upper() else Color(1, 0.7, 0.65)
 			if square == selected or (selected != "" and state.legalMoves.has(selected + square)):
 				button.modulate = Color(0.7, 1, 0.5)
-			button.disabled = (pending and current_path != "game") or ai_turn or state.outcome.over
+			button.disabled = not review.is_empty() or (pending and current_path != "game") or ai_turn or state.outcome.over
 			button.pressed.connect(choose.bind(square, piece))
 			grid.add_child(button)
 			squares[square] = button
@@ -201,8 +248,21 @@ func render_board() -> void:
 	if state.ai.status == "error":
 		status.text += " · " + str(state.ai.error)
 	for button in action_buttons:
-		button.disabled = pending and current_path != "game"
+		button.disabled = not review.is_empty() or (pending and current_path != "game")
 	action_buttons[1].disabled = action_buttons[1].disabled or ai_turn or state.outcome.over or state.inCheck
 	action_buttons[2].disabled = action_buttons[2].disabled or not state.canUndo
 	action_buttons[3].disabled = action_buttons[3].disabled or state.ai.status != "thinking"
 	action_buttons[4].disabled = action_buttons[4].disabled or not state.ai.status in ["paused", "error"]
+	if not review.is_empty():
+		status.text = "복기 %d/%d수 · %s" % [view_ply(), self.state.moves.size(), status.text]
+	history.clear()
+	history.add_item("0수 · 시작 배치")
+	for index in range(self.state.moves.size()):
+		var pair := split_move(self.state.moves[index])
+		var description: String = "한수쉼" if pair[0] == pair[1] else "%s → %s" % [pair[0], pair[1]]
+		history.add_item("%d수 · %s %s" % [index + 1, "초" if index % 2 == 0 else "한", description])
+	history.select(view_ply())
+	review_buttons[0].disabled = pending or self.state.moves.is_empty()
+	review_buttons[1].disabled = pending or view_ply() == 0
+	review_buttons[2].disabled = pending or review.is_empty() or view_ply() >= self.state.moves.size()
+	review_buttons[3].disabled = pending or review.is_empty()
