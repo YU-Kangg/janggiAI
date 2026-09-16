@@ -47,10 +47,12 @@
 
 ### Git 관리 도입 (2026-09-16)
 
-- 저장소 이름: `jangiAI.com`, 기본 브랜치: `main`, GitHub 계정: `YU-Kangg`.
+- 저장소: [YU-Kangg/janggiAI](https://github.com/YU-Kangg/janggiAI), 기본 브랜치: `main`, 공개 범위: Public.
 - `COMMIT_CONVENTION.md`에 커밋 형식과 작업 절차를 정의하고 `AGENTS.md`에 준수 지침을 저장.
 - 1~3단계 현재 상태를 초기 커밋으로 관리. 이후 검증한 작업 단위마다 커밋.
-- GitHub 원격 생성·push는 미완료. 연결 도구에 생성 기능이 없고 CLI도 없어 사용자 연결 필요.
+- 사용자가 생성·이름 변경한 저장소를 `origin`에 연결하고 초기 커밋 `fc694da` push 완료.
+- 이 프로젝트는 Git Credential Manager를 사용하도록 로컬 인증 설정. 기존 전역 설정의 삭제된 CLI 경로 참조를 피함.
+- 이후 완료한 작업은 컨벤션에 따라 커밋·push하고 원격 커밋과 동기화를 확인.
 
 ### 다음 기능 작업
 
