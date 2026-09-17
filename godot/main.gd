@@ -55,6 +55,7 @@ var device_recommend := Button.new()
 var device_cancel := Button.new()
 var device_request: Dictionary = {}
 var recommended_move := ""
+var page_scroll := ScrollContainer.new()
 
 func _ready() -> void:
 	var margin := MarginContainer.new()
@@ -62,9 +63,15 @@ func _ready() -> void:
 	for edge in ["left", "right", "top", "bottom"]:
 		margin.add_theme_constant_override("margin_" + edge, 12)
 	add_child(margin)
+	page_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	page_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	page_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	page_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_child(page_scroll)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 8)
-	margin.add_child(column)
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	page_scroll.add_child(column)
 	var title := Label.new()
 	title.text = "고양이 장기 · 플레이 시제품"
 	column.add_child(title)

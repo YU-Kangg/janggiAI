@@ -21,6 +21,7 @@ func run() -> void:
 	app.timer.stop()
 	await wait_idle()
 	check(not app.state.is_empty(), "initial HTTP connection")
+	check(app.page_scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_AUTO, "mobile page vertical scrolling")
 	check(app.squares.size() == 90, "90 board squares")
 	check(not app.device_engine.available() and app.device_recommend.disabled, "desktop fallback without Android engine")
 	app.act("reset", {"mode": "ai", "humanSide": "cho"})
