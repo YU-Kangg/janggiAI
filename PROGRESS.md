@@ -156,3 +156,11 @@
 - 실제 Fairy-Stockfish NNUE와 HTTP 경로 포함 테스트 28개 통과(skip 없음).
 - 평가값·PV·실수 등급·전체 기보 작업 큐는 아직 없음. 판단이 필요한 항목은 [SERVER_REVIEW_NOTES.md](SERVER_REVIEW_NOTES.md)에 기록.
 - 다음 작은 단위: UCI score/depth/PV 파싱 실험 또는 Godot에서 선택한 한 수의 서버 비교 결과 표시.
+
+### 6단계 B — 서버 NNUE 평가 정보 파싱
+
+- 마지막 `multipv 1` UCI info에서 score(cp/mate), depth·seldepth, nodes·nps·time, PV를 구조화.
+- UCI의 둘 차례 관점 평가와 초 관점으로 부호를 통일한 평가를 함께 반환. cp는 공식 장기 기물 점수가 아닌 엔진 내부 단위로 문서화.
+- bestmove와 PV 첫 수의 일치, 필수 숫자와 PV 수 형식을 검증해 불완전한 엔진 출력을 거부.
+- 실제 초기판 확인: 깊이 14, 74,609 nodes, 301ms, 초 관점 +5cp, 11수 PV. 짧은 탐색이라 실행마다 값은 달라질 수 있음.
+- 실제 엔진 통합과 cp/mate·관점 변환 테스트 추가. 다음 단위는 실제 착수 뒤 평가를 구해 손실 원자료를 만드는 작업.

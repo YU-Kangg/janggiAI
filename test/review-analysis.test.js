@@ -19,7 +19,7 @@ test('선택한 실제 수와 당시 서버 추천을 비교하고 대국은 변
   const second = await act(game, 'review-analysis', { ply: 2 });
   assert.deepEqual(first, {
     revision: 2, ply: 1, side: 'cho', playedMove: 'a4b4', recommendedMove: 'a4b4',
-    match: true, budgetMs: 300, source: 'test-engine',
+    match: true, budgetMs: 300, source: 'test-engine', analysis: null,
   });
   assert.equal(second.side, 'han');
   assert.equal(second.playedMove, 'a7b7');

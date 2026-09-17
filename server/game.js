@@ -115,7 +115,7 @@ export class Game {
       return {
         revision, ply: data.ply, side: position.turn, playedMove,
         recommendedMove: result.move, match: playedMove === result.move,
-        budgetMs: result.budgetMs, source: result.source,
+        budgetMs: result.budgetMs, source: result.source, analysis: result.analysis ?? null,
       };
     }
     if (action === 'cancel-ai') {

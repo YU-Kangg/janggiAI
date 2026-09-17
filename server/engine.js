@@ -7,6 +7,22 @@ export const enginePath = process.env.JANGGI_ENGINE_PATH || fileURLToPath(
 );
 const movePattern = /^[a-i](?:10|[1-9])[a-i](?:10|[1-9])$/;
 
+export function parseAnalysis(output, startFen, moves) {
+  const lines = output.match(/^info depth .*$/gm) || [];
+  const line = lines.filter(value => /\bmultipv 1\b/.test(value) && /\bscore (?:cp|mate) -?\d+\b/.test(value) && /\bpv\s+\S+/.test(value)).at(-1);
+  if (!line) throw new Error('엔진 평가 정보를 읽지 못했습니다.');
+  const integer = name => Number(line.match(new RegExp(`\\b${name} (\\d+)\\b`))?.[1]);
+  const score = line.match(/\bscore (cp|mate) (-?\d+)\b/);
+  const pv = line.match(/\bpv\s+(.+)$/)?.[1].trim().split(/\s+/) || [];
+  if (!score || pv.length === 0 || pv.some(move => !movePattern.test(move))) throw new Error('엔진 평가 정보를 읽지 못했습니다.');
+  const initialChoTurn = startFen.trim().split(/\s+/)[1] === 'w';
+  const choTurn = moves.length % 2 === 0 ? initialChoTurn : !initialChoTurn;
+  const sideToMove = Number(score[2]);
+  const fields = { depth: integer('depth'), selDepth: integer('seldepth'), nodes: integer('nodes'), nps: integer('nps'), timeMs: integer('time') };
+  if (Object.values(fields).some(value => !Number.isSafeInteger(value) || value < 0)) throw new Error('엔진 평가 정보를 읽지 못했습니다.');
+  return { ...fields, evaluation: { unit: score[1], sideToMove, cho: choTurn ? sideToMove : -sideToMove }, pv };
+}
+
 // Small local prototype: each request owns its engine process and search state.
 // Replace with a bounded worker pool when adding server reviews.
 export function runEngine(moves, analyze = false, startFen = initialFen(), { signal } = {}) {
@@ -70,5 +86,7 @@ export async function recommend(moves, startFen = initialFen(), options = {}) {
   }
   const move = output.match(/^bestmove (\S+)/m)?.[1];
   if (!movePattern.test(move || '')) throw new Error('추천할 수를 찾지 못했습니다.');
-  return { move, budgetMs: 300, source: 'local-server' };
+  const analysis = parseAnalysis(output, startFen, moves);
+  if (analysis.pv[0] !== move) throw new Error('추천 수와 평가 수순이 일치하지 않습니다.');
+  return { move, budgetMs: 300, source: 'local-server', analysis };
 }
