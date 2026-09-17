@@ -89,6 +89,12 @@ func run() -> void:
 	check(app.analysis_stage == 2 and app.analysis_preview.fen == app.review_analysis.recommendedFen, "recommended piece movement")
 	check(app.review_analysis.prediction.fens.size() >= 2, "prediction positions available")
 	app.play_prediction()
+	await create_timer(0.1).timeout
+	app.stop_prediction()
+	var stopped_prediction_index: int = app.prediction_index
+	await create_timer(0.6).timeout
+	check(not app.prediction_playing and app.prediction_index == stopped_prediction_index and app.message.text.contains("수순 정지"), "prediction manual stop")
+	app.play_prediction()
 	await create_timer(0.65).timeout
 	check(app.prediction_index >= 1 and app.message.text.contains("예상 수순"), "prediction auto playback")
 	var retry_move: String = app.review_analysis.recommendedMove

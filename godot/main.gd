@@ -48,8 +48,10 @@ var retry_expected_move := ""
 var retry_hint_button := Button.new()
 var retry_hint_stage := 0
 var prediction_button := Button.new()
+var prediction_stop_button := Button.new()
 var prediction_index := -1
 var prediction_generation := 0
+var prediction_playing := false
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -169,6 +171,10 @@ func _ready() -> void:
 	prediction_button.custom_minimum_size.y = 44
 	prediction_button.pressed.connect(play_prediction)
 	navigation.add_child(prediction_button)
+	prediction_stop_button.text = "수순 정지"
+	prediction_stop_button.custom_minimum_size.y = 44
+	prediction_stop_button.pressed.connect(stop_prediction)
+	navigation.add_child(prediction_stop_button)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
 	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
@@ -494,6 +500,7 @@ func next_key_move() -> void:
 func clear_review_analysis() -> void:
 	analysis_generation += 1
 	prediction_generation += 1
+	prediction_playing = false
 	prediction_index = -1
 	review_analysis = {}
 	analysis_preview = {}
@@ -508,6 +515,7 @@ func play_prediction() -> void:
 		return
 	prediction_generation += 1
 	var generation := prediction_generation
+	prediction_playing = true
 	analysis_generation += 1
 	analysis_move = ""
 	analysis_stage = 0
@@ -524,6 +532,18 @@ func play_prediction() -> void:
 		render_board()
 		if index < fens.size() - 1:
 			await get_tree().create_timer(0.55).timeout
+	if generation == prediction_generation:
+		prediction_playing = false
+		render_board()
+
+func stop_prediction() -> void:
+	if not prediction_playing:
+		return
+	prediction_generation += 1
+	prediction_playing = false
+	var total: int = review_analysis.get("prediction", {}).get("fens", []).size() - 1
+	message.text = "엔진 예상 수순 정지 · %d/%d" % [maxi(prediction_index, 0), maxi(total, 0)]
+	render_board()
 
 func play_review_analysis(payload: Dictionary) -> void:
 	analysis_generation += 1
@@ -774,3 +794,4 @@ func render_position(state: Dictionary) -> void:
 	retry_button.disabled = pending or review.is_empty() or not variation.is_empty() or view_ply() < 1 or cached_review_result(view_ply()).is_empty()
 	retry_hint_button.disabled = pending or not retry_mode or variation.is_empty() or not variation_moves.is_empty() or retry_hint_stage >= 2
 	prediction_button.disabled = pending or review.is_empty() or not variation.is_empty() or review_analysis.get("prediction", {}).get("fens", []).size() < 2
+	prediction_stop_button.disabled = not prediction_playing
