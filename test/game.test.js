@@ -34,6 +34,12 @@ test('실제 janggi 엔진: 합법 수, 한수쉼, 추천, 되돌리기, 요청 
   assert.equal(ai.status, 200);
   assert.ok(moved.data.legalMoves.includes(ai.data.move));
   assert.equal((await call('game')).data.revision, 1, '추천만으로 착수되지 않음');
+  const reviewAnalysis = await call('review-analysis', { revision: 1, ply: 1 });
+  assert.equal(reviewAnalysis.status, 200);
+  assert.equal(reviewAnalysis.data.playedMove, 'a4b4');
+  assert.ok(initial.data.legalMoves.includes(reviewAnalysis.data.recommendedMove));
+  assert.equal(reviewAnalysis.data.match, reviewAnalysis.data.recommendedMove === 'a4b4');
+  assert.deepEqual((await call('game')).data.moves, ['a4b4'], '복기 분석만으로 착수되지 않음');
   const passed = await call('move', { revision: 1, move: 'e9e9' });
   assert.equal(passed.status, 200);
   assert.equal(passed.data.turn, 'cho');

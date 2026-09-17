@@ -28,7 +28,7 @@ export function createServer({ game = new Game() } = {}) {
         res.writeHead(200, { 'Content-Type': `${type}; charset=utf-8` });
         return res.end(body);
       }
-      const action = /^\/api\/(move|undo|reset|recommend|cancel-ai|resume-ai|review)$/.exec(req.url)?.[1];
+      const action = /^\/api\/(move|undo|reset|recommend|cancel-ai|resume-ai|review|review-analysis)$/.exec(req.url)?.[1];
       if (!(req.method === 'GET' && req.url === '/api/game') && !(req.method === 'POST' && action)) {
         return json(404, { error: '요청 경로를 찾을 수 없습니다.' });
       }

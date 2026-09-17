@@ -101,6 +101,23 @@ export class Game {
       const moves = this.moves.slice(0, data.ply);
       return { ...state, ...rulePosition(moves, initialFen(this.setup)), moves, legalMoves: [], canUndo: false };
     }
+    if (action === 'review-analysis') {
+      if (!Number.isInteger(data.ply) || data.ply < 1 || data.ply > this.moves.length) throw fail('분석할 실제 수 번호가 올바르지 않습니다.', 400);
+      if (this.aiJob) throw fail('AI 응수가 끝난 뒤 복기 분석을 시작하세요.');
+      const revision = this.revision;
+      const moveIndex = data.ply - 1;
+      const moves = this.moves.slice(0, moveIndex);
+      const position = rulePosition(moves, initialFen(this.setup));
+      const result = await this.recommendMove(moves, initialFen(this.setup));
+      if (this.revision !== revision) throw fail('분석 중 대국 상태가 변경되었습니다. 다시 시도하세요.');
+      if (!position.legalMoves.includes(result.move)) throw new Error('합법 수가 아닌 복기 추천을 받았습니다.');
+      const playedMove = this.moves[moveIndex];
+      return {
+        revision, ply: data.ply, side: position.turn, playedMove,
+        recommendedMove: result.move, match: playedMove === result.move,
+        budgetMs: result.budgetMs, source: result.source,
+      };
+    }
     if (action === 'cancel-ai') {
       if (!this.aiJob) throw fail('진행 중인 AI 응수가 없습니다.');
       this.stopAi();

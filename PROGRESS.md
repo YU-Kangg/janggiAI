@@ -147,3 +147,12 @@
 - ADB 서버를 숨김 백그라운드 프로세스로 유지하고 `tcp:3000` 포워딩을 복구. 앱에서 revision 118의 3수 장기판 표시 확인.
 - `scripts/run-android.ps1 -SkipInstall`로 APK 재설치 없이 포트 포워딩과 앱 실행만 복구하도록 추가.
 - USB 해제·PC 재부팅·ADB 서버 종료 뒤에는 포워딩이 사라지므로 재연결 명령이 필요함.
+
+### 6단계 A — 서버 단일 수 복기 분석 기반
+
+- `POST /api/review-analysis`: 1부터 시작하는 실제 수 번호를 받아 그 직전 위치에서 서버 NNUE 300ms 추천 실행.
+- 당시 실제 수·추천 수·진영·일치 여부·엔진 출처 반환. 추천 합법성, ply, revision을 검증하고 대국 상태와 저장 파일은 변경하지 않음.
+- 자동 AI 응수와 동시 실행을 막아 현재 요청별 엔진 프로세스 구조에서 CPU 탐색이 겹치지 않도록 제한.
+- 실제 Fairy-Stockfish NNUE와 HTTP 경로 포함 테스트 28개 통과(skip 없음).
+- 평가값·PV·실수 등급·전체 기보 작업 큐는 아직 없음. 판단이 필요한 항목은 [SERVER_REVIEW_NOTES.md](SERVER_REVIEW_NOTES.md)에 기록.
+- 다음 작은 단위: UCI score/depth/PV 파싱 실험 또는 Godot에서 선택한 한 수의 서버 비교 결과 표시.
