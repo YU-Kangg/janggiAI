@@ -54,6 +54,13 @@ func run() -> void:
 	check(app.review.moves.size() == 1, "evaluation graph navigates to selected ply")
 	app.show_review(0)
 	await wait_idle()
+	app.full_review.results[1].classification = {"key": "inaccuracy", "label": "부정확", "experimental": true}
+	check(app.next_key_ply(0) == 2, "next key move finds classified mistake")
+	app.next_key_move()
+	await wait_idle()
+	check(app.review.moves.size() == 2, "next key move navigation")
+	app.show_review(0)
+	await wait_idle()
 	check(app.review.moves.size() == 0 and app.state.moves.size() == 2, "review preserves live history")
 	check(app.squares["a4"].disabled and app.action_buttons[2].disabled, "review blocks move and undo")
 	app.act("undo")

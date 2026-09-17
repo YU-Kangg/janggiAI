@@ -39,6 +39,7 @@ var full_review: Dictionary = {}
 var full_review_start := Button.new()
 var full_review_cancel := Button.new()
 var evaluation_graph = EvaluationGraph.new()
+var next_key_move_button := Button.new()
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -133,6 +134,10 @@ func _ready() -> void:
 	variation_resume.custom_minimum_size.y = 44
 	variation_resume.pressed.connect(resume_review)
 	navigation.add_child(variation_resume)
+	next_key_move_button.text = "다음 핵심 수"
+	next_key_move_button.custom_minimum_size.y = 44
+	next_key_move_button.pressed.connect(next_key_move)
+	navigation.add_child(next_key_move_button)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
 	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
@@ -390,6 +395,22 @@ func cached_review_result(ply: int) -> Dictionary:
 			return item
 	return {}
 
+func next_key_ply(after_ply: int) -> int:
+	if full_review.get("status", "") != "complete":
+		return -1
+	for item in full_review.get("results", []):
+		var key := str(item.get("classification", {}).get("key", ""))
+		if int(item.get("ply", -1)) > after_ply and key in ["inaccuracy", "mistake", "blunder"]:
+			return int(item.ply)
+	return -1
+
+func next_key_move() -> void:
+	if pending or review.is_empty() or not variation.is_empty():
+		return
+	var ply := next_key_ply(view_ply())
+	if ply >= 0:
+		show_review(ply)
+
 func clear_review_analysis() -> void:
 	analysis_generation += 1
 	review_analysis = {}
@@ -637,3 +658,4 @@ func render_position(state: Dictionary) -> void:
 	variation_start.disabled = pending or review.is_empty() or not variation.is_empty()
 	variation_undo.disabled = pending or variation.is_empty() or variation_moves.is_empty()
 	variation_resume.disabled = pending or variation.is_empty()
+	next_key_move_button.disabled = pending or review.is_empty() or not variation.is_empty() or next_key_ply(view_ply()) < 0
