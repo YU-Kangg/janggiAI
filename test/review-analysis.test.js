@@ -96,3 +96,47 @@ test('자동 AI 탐색 중에는 서버 복기 분석을 시작하지 않음', a
   await assert.rejects(act(game, 'review-analysis', { ply: 1 }), /AI 응수/);
   game.stopAi();
 });
+
+test('전체 기보 리뷰는 위치 평가를 재사용하며 백그라운드 진행률과 결과를 제공', async () => {
+  const calls = [];
+  const engineResults = [
+    { move: 'a4b4', cho: 20 }, { move: 'a7b7', cho: 10 }, { move: 'i4h4', cho: 15 },
+  ];
+  const game = new Game({ recommendMove: async moves => {
+    calls.push([...moves]);
+    const item = engineResults[moves.length];
+    return {
+      move: item.move, budgetMs: 300, source: 'test-engine',
+      analysis: { evaluation: { unit: 'cp', cho: item.cho }, pv: [item.move] },
+    };
+  } });
+  await act(game, 'move', { move: 'a4b4' });
+  await act(game, 'move', { move: 'a7b7' });
+  const before = game.snapshot();
+
+  const started = await act(game, 'review-start');
+  assert.equal(started.status, 'running');
+  assert.equal(started.total, 2);
+  await game.fullReviewJob.done;
+  const complete = await act(game, 'review-status', { jobId: started.jobId });
+  assert.equal(complete.status, 'complete');
+  assert.equal(complete.completed, 2);
+  assert.equal(complete.results.length, 2);
+  assert.deepEqual(complete.results.map(item => item.analysis.lossCp), [10, 5]);
+  assert.deepEqual(calls, [[], ['a4b4'], ['a4b4', 'a7b7']]);
+  assert.deepEqual(game.snapshot(), before);
+});
+
+test('전체 기보 리뷰는 취소할 수 있음', async () => {
+  const game = new Game({ recommendMove: (_moves, _fen, { signal }) => new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(Object.assign(new Error('취소됨'), { name: 'AbortError' }));
+    signal.addEventListener('abort', () => reject(Object.assign(new Error('취소됨'), { name: 'AbortError' })), { once: true });
+  }) });
+  await act(game, 'move', { move: 'a4b4' });
+  const started = await act(game, 'review-start');
+  await act(game, 'review-cancel');
+  await game.fullReviewJob.done;
+  const status = await act(game, 'review-status', { jobId: started.jobId });
+  assert.equal(status.status, 'cancelled');
+  assert.equal(status.completed, 0);
+});

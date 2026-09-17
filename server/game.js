@@ -3,6 +3,34 @@ import { rulePosition, initialFen, defaultSetup } from './rules.js';
 
 const fail = (message, status = 409) => Object.assign(new Error(message), { status });
 
+function reviewEntry({ revision, ply, position, result, afterPosition, afterResult, playedMove }) {
+  const beforeEvaluation = result.analysis?.evaluation;
+  const afterEvaluation = afterResult?.analysis?.evaluation;
+  let rawLossCp = null;
+  let lossCp = null;
+  let lossReason = null;
+  if (afterPosition.outcome.over) lossReason = 'terminal';
+  else if (!beforeEvaluation || !afterEvaluation) lossReason = 'analysis-unavailable';
+  else if (beforeEvaluation.unit !== 'cp' || afterEvaluation.unit !== 'cp') lossReason = 'mate-score';
+  else {
+    const moverSign = position.turn === 'cho' ? 1 : -1;
+    rawLossCp = moverSign * (beforeEvaluation.cho - afterEvaluation.cho);
+    lossCp = Math.max(0, rawLossCp);
+  }
+  const recommendedPosition = rulePosition([...position.moves, result.move], position.initialFen);
+  return {
+    revision, ply, side: position.turn, playedMove,
+    recommendedMove: result.move, match: playedMove === result.move,
+    beforeFen: position.fen, recommendedFen: recommendedPosition.fen,
+    budgetMs: result.budgetMs, source: result.source,
+    analysis: {
+      before: result.analysis ?? null, after: afterResult?.analysis ?? null,
+      rawLossCp, lossCp, lossReason,
+      terminalOutcome: afterPosition.outcome.over ? afterPosition.outcome : null,
+    },
+  };
+}
+
 export class Game {
   moves = [];
   revision = 0;
@@ -13,6 +41,8 @@ export class Game {
   aiStatus = 'idle';
   aiError = null;
   aiJob = null;
+  fullReviewJob = null;
+  nextReviewJobId = 1;
 
   constructor({ recommendMove = recommend, storage = null } = {}) {
     this.recommendMove = recommendMove;
@@ -91,6 +121,57 @@ export class Game {
       });
   }
 
+  fullReviewSnapshot(job = this.fullReviewJob) {
+    if (!job) return null;
+    return {
+      jobId: job.id, revision: job.revision, status: job.status,
+      completed: job.completed, total: job.total, results: [...job.results], error: job.error,
+    };
+  }
+
+  stopFullReview() {
+    this.fullReviewJob?.controller.abort();
+  }
+
+  startFullReview() {
+    if (this.fullReviewJob?.status === 'running') return this.fullReviewSnapshot();
+    const job = {
+      id: this.nextReviewJobId++, revision: this.revision, status: 'running', completed: 0,
+      total: this.moves.length, results: [], error: null, controller: new AbortController(),
+    };
+    this.fullReviewJob = job;
+    const gameMoves = [...this.moves];
+    const startFen = initialFen(this.setup);
+    job.done = Promise.resolve().then(async () => {
+      let previousPosition = null;
+      let previousResult = null;
+      for (let index = 0; index <= gameMoves.length; index++) {
+        if (this.revision !== job.revision || this.fullReviewJob !== job) throw Object.assign(new Error('대국 상태가 변경되어 전체 리뷰를 중단했습니다.'), { name: 'ReviewCancelled' });
+        const prefix = gameMoves.slice(0, index);
+        const position = { ...rulePosition(prefix, startFen), moves: prefix, initialFen: startFen };
+        let result = null;
+        if (!position.outcome.over) {
+          result = await this.recommendMove(prefix, startFen, { signal: job.controller.signal });
+          if (!position.legalMoves.includes(result.move)) throw new Error('합법 수가 아닌 전체 리뷰 추천을 받았습니다.');
+        }
+        if (index > 0) {
+          job.results.push(reviewEntry({
+            revision: job.revision, ply: index, position: previousPosition, result: previousResult,
+            afterPosition: position, afterResult: result, playedMove: gameMoves[index - 1],
+          }));
+          job.completed = index;
+        }
+        previousPosition = position;
+        previousResult = result;
+      }
+      job.status = 'complete';
+    }).catch(error => {
+      job.status = error.name === 'AbortError' || error.name === 'ReviewCancelled' ? 'cancelled' : 'error';
+      job.error = error.message;
+    });
+    return this.fullReviewSnapshot(job);
+  }
+
   async act(action, data) {
     if (data.revision !== this.revision) {
       throw Object.assign(new Error('다른 화면에서 기보가 변경되었습니다. 새로고침하세요.'), { status: 409 });
@@ -120,45 +201,35 @@ export class Game {
       const revision = this.revision;
       const moveIndex = data.ply - 1;
       const moves = this.moves.slice(0, moveIndex);
-      const position = rulePosition(moves, initialFen(this.setup));
+      const startFen = initialFen(this.setup);
+      const position = { ...rulePosition(moves, startFen), moves, initialFen: startFen };
       const result = await this.recommendMove(moves, initialFen(this.setup));
       if (this.revision !== revision) throw fail('분석 중 대국 상태가 변경되었습니다. 다시 시도하세요.');
       if (!position.legalMoves.includes(result.move)) throw new Error('합법 수가 아닌 복기 추천을 받았습니다.');
       const playedMove = this.moves[moveIndex];
       const afterMoves = [...moves, playedMove];
-      const afterPosition = rulePosition(afterMoves, initialFen(this.setup));
-      const recommendedPosition = rulePosition([...moves, result.move], initialFen(this.setup));
+      const afterPosition = rulePosition(afterMoves, startFen);
       let afterResult = null;
       if (!afterPosition.outcome.over) {
         afterResult = await this.recommendMove(afterMoves, initialFen(this.setup));
         if (this.revision !== revision) throw fail('분석 중 대국 상태가 변경되었습니다. 다시 시도하세요.');
         if (!afterPosition.legalMoves.includes(afterResult.move)) throw new Error('엔진이 둘 수 없는 착수 후 추천 수를 반환했습니다.');
       }
-      const beforeEvaluation = result.analysis?.evaluation;
-      const afterEvaluation = afterResult?.analysis?.evaluation;
-      let rawLossCp = null;
-      let lossCp = null;
-      let lossReason = null;
-      if (afterPosition.outcome.over) lossReason = 'terminal';
-      else if (!beforeEvaluation || !afterEvaluation) lossReason = 'analysis-unavailable';
-      else if (beforeEvaluation.unit !== 'cp' || afterEvaluation.unit !== 'cp') lossReason = 'mate-score';
-      else {
-        const moverSign = position.turn === 'cho' ? 1 : -1;
-        rawLossCp = moverSign * (beforeEvaluation.cho - afterEvaluation.cho);
-        lossCp = Math.max(0, rawLossCp);
-      }
-      return {
-        revision, ply: data.ply, side: position.turn, playedMove,
-        recommendedMove: result.move, match: playedMove === result.move,
-        beforeFen: position.fen, recommendedFen: recommendedPosition.fen,
-        budgetMs: result.budgetMs, source: result.source,
-        analysis: {
-          before: result.analysis ?? null,
-          after: afterResult?.analysis ?? null,
-          rawLossCp, lossCp, lossReason,
-          terminalOutcome: afterPosition.outcome.over ? afterPosition.outcome : null,
-        },
-      };
+      return reviewEntry({ revision, ply: data.ply, position, result, afterPosition, afterResult, playedMove });
+    }
+    if (action === 'review-start') {
+      if (!this.moves.length) throw fail('분석할 기보가 없습니다.', 400);
+      if (this.aiJob) throw fail('AI 응수가 끝난 뒤 전체 리뷰를 시작하세요.');
+      return this.startFullReview();
+    }
+    if (action === 'review-status') {
+      if (!this.fullReviewJob || (data.jobId != null && data.jobId !== this.fullReviewJob.id)) throw fail('전체 리뷰 작업을 찾을 수 없습니다.', 404);
+      return this.fullReviewSnapshot();
+    }
+    if (action === 'review-cancel') {
+      if (!this.fullReviewJob || this.fullReviewJob.status !== 'running') throw fail('진행 중인 전체 리뷰가 없습니다.');
+      this.fullReviewJob.controller.abort();
+      return this.fullReviewSnapshot();
     }
     if (action === 'cancel-ai') {
       if (!this.aiJob) throw fail('진행 중인 AI 응수가 없습니다.');
