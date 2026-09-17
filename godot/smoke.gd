@@ -85,6 +85,15 @@ func run() -> void:
 	check(app.analysis_stage == 1 and app.analysis_preview.fen == app.review_analysis.beforeFen, "recommendation source highlight")
 	await create_timer(0.6).timeout
 	check(app.analysis_stage == 2 and app.analysis_preview.fen == app.review_analysis.recommendedFen, "recommended piece movement")
+	var retry_move: String = app.review_analysis.recommendedMove
+	app.start_retry()
+	await wait_idle()
+	check(app.retry_mode and app.variation_start_ply == 0 and app.variation.moves.size() == 0, "retry starts before reviewed move")
+	app.play_variation_move(retry_move)
+	await wait_idle()
+	check(app.message.text.contains("성공") and app.variation_moves == [retry_move], "retry best-move feedback")
+	app.resume_review()
+	check(app.review.moves.size() == 1 and not app.retry_mode, "retry resumes reviewed move")
 	app.start_variation()
 	await wait_idle()
 	check(not app.variation.is_empty() and app.variation_start_ply == 1, "variation starts from review position")

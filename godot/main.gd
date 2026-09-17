@@ -40,6 +40,10 @@ var full_review_start := Button.new()
 var full_review_cancel := Button.new()
 var evaluation_graph = EvaluationGraph.new()
 var next_key_move_button := Button.new()
+var retry_button := Button.new()
+var retry_mode := false
+var retry_review_ply := -1
+var retry_expected_move := ""
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -138,6 +142,10 @@ func _ready() -> void:
 	next_key_move_button.custom_minimum_size.y = 44
 	next_key_move_button.pressed.connect(next_key_move)
 	navigation.add_child(next_key_move_button)
+	retry_button.text = "다시 두기"
+	retry_button.custom_minimum_size.y = 44
+	retry_button.pressed.connect(start_retry)
+	navigation.add_child(retry_button)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
 	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
@@ -225,7 +233,12 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 			variation = payload
 			variation_moves = payload.variation.moves.duplicate()
 			selected = ""
-			message.text = "자유 분석 중 · 초와 한을 번갈아 둘 수 있습니다."
+			if retry_mode and variation_moves.size() == 1:
+				message.text = "다시 두기 성공 · 최선 수를 찾았습니다." if variation_moves[0] == retry_expected_move else "다시 시도해 보세요 · 더 좋은 수가 있습니다."
+			elif retry_mode:
+				message.text = "다시 두기 · 이 장면에서 더 좋은 수를 찾아보세요."
+			else:
+				message.text = "자유 분석 중 · 초와 한을 번갈아 둘 수 있습니다."
 			schedule_variation_evaluation()
 		render_board()
 		return
@@ -319,11 +332,28 @@ func return_live() -> void:
 func start_variation() -> void:
 	if pending or review.is_empty() or not variation.is_empty():
 		return
+	retry_mode = false
+	retry_review_ply = -1
+	retry_expected_move = ""
+	start_variation_at(view_ply())
+
+func start_variation_at(base_ply: int) -> void:
 	cancel_device_recommendation(false)
 	clear_review_analysis()
-	variation_start_ply = view_ply()
+	variation_start_ply = base_ply
 	variation_moves = []
 	send("variation", {"revision": state.revision, "basePly": variation_start_ply, "moves": variation_moves})
+
+func start_retry() -> void:
+	if pending or review.is_empty() or not variation.is_empty() or view_ply() < 1:
+		return
+	var cached := cached_review_result(view_ply())
+	if cached.is_empty():
+		return
+	retry_mode = true
+	retry_review_ply = view_ply()
+	retry_expected_move = str(cached.recommendedMove)
+	start_variation_at(retry_review_ply - 1)
 
 func play_variation_move(move: String) -> void:
 	if pending or variation.is_empty() or not variation.legalMoves.has(move):
@@ -344,6 +374,9 @@ func resume_review() -> void:
 		return
 	cancel_device_recommendation(false)
 	clear_variation()
+	retry_mode = false
+	retry_review_ply = -1
+	retry_expected_move = ""
 	selected = ""
 	message.text = "복기를 재개했습니다."
 	render_board()
@@ -659,3 +692,4 @@ func render_position(state: Dictionary) -> void:
 	variation_undo.disabled = pending or variation.is_empty() or variation_moves.is_empty()
 	variation_resume.disabled = pending or variation.is_empty()
 	next_key_move_button.disabled = pending or review.is_empty() or not variation.is_empty() or next_key_ply(view_ply()) < 0
+	retry_button.disabled = pending or review.is_empty() or not variation.is_empty() or view_ply() < 1 or cached_review_result(view_ply()).is_empty()
