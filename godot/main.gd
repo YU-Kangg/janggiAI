@@ -34,6 +34,9 @@ var variation_undo := Button.new()
 var variation_resume := Button.new()
 var variation_evaluation: Dictionary = {}
 var variation_evaluation_target := ""
+var full_review: Dictionary = {}
+var full_review_start := Button.new()
+var full_review_cancel := Button.new()
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -87,6 +90,14 @@ func _ready() -> void:
 	device_cancel.custom_minimum_size.y = 44
 	device_cancel.pressed.connect(cancel_device_recommendation)
 	actions.add_child(device_cancel)
+	full_review_start.text = "전체 리뷰"
+	full_review_start.custom_minimum_size.y = 44
+	full_review_start.pressed.connect(start_full_review)
+	actions.add_child(full_review_start)
+	full_review_cancel.text = "리뷰 취소"
+	full_review_cancel.custom_minimum_size.y = 44
+	full_review_cancel.pressed.connect(cancel_full_review)
+	actions.add_child(full_review_cancel)
 	device_engine.completed.connect(on_device_recommendation)
 	column.add_child(history)
 	history.item_selected.connect(func(index: int): show_review(index))
@@ -150,7 +161,10 @@ func add_action(parent: Node, caption: String, callback: Callable) -> void:
 
 func request_state() -> void:
 	if not pending:
-		send("game")
+		if full_review.get("status", "") == "running":
+			send("review-status", {"revision": state.revision, "jobId": full_review.jobId})
+		else:
+			send("game")
 
 func send(path: String, data: Dictionary = {}) -> void:
 	if pending:
@@ -206,6 +220,21 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 			schedule_variation_evaluation()
 		render_board()
 		return
+	if current_path in ["review-start", "review-status", "review-cancel"]:
+		if not payload.has("jobId") or not payload.has("status") or not payload.has("completed") or not payload.has("total"):
+			message.text = "전체 리뷰 응답 형식이 올바르지 않습니다."
+		else:
+			full_review = payload
+			if payload.status == "running":
+				message.text = "전체 리뷰 분석 중 · %d/%d수" % [int(payload.completed), int(payload.total)]
+			elif payload.status == "complete":
+				message.text = "전체 리뷰 완료 · %d수" % int(payload.total)
+			elif payload.status == "cancelled":
+				message.text = "전체 리뷰를 취소했습니다."
+			else:
+				message.text = "전체 리뷰 실패: %s" % str(payload.get("error", "알 수 없는 오류"))
+		render_board()
+		return
 	if not payload.has("fen") or not payload.has("legalMoves"):
 		message.text = "장기 서버 응답이 아닙니다."
 		return
@@ -223,6 +252,8 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		review = {}
 		clear_review_analysis()
 		clear_variation()
+		if not full_review.is_empty() and full_review.get("revision") != payload.revision:
+			full_review = {}
 		selected = ""
 	if current_path != "game" or changed:
 		message.text = ""
@@ -235,6 +266,17 @@ func act(action: String, data: Dictionary = {}) -> void:
 	cancel_device_recommendation(false)
 	data["revision"] = state.revision
 	send(action, data)
+
+func start_full_review() -> void:
+	if pending or state.is_empty() or state.moves.is_empty() or full_review.get("status", "") == "running":
+		return
+	return_live()
+	send("review-start", {"revision": state.revision})
+
+func cancel_full_review() -> void:
+	if pending or full_review.get("status", "") != "running":
+		return
+	send("review-cancel", {"revision": state.revision, "jobId": full_review.jobId})
 
 func view_ply() -> int:
 	return review.moves.size() if not review.is_empty() else state.get("moves", []).size()
@@ -544,6 +586,8 @@ func render_position(state: Dictionary) -> void:
 	action_buttons[4].disabled = action_buttons[4].disabled or not state.ai.status in ["paused", "error"]
 	device_recommend.disabled = not variation.is_empty() or not device_engine.available() or device_engine.busy() or state.outcome.over or state.legalMoves.is_empty()
 	device_cancel.disabled = not variation.is_empty() or not device_engine.busy()
+	full_review_start.disabled = pending or self.state.moves.is_empty() or full_review.get("status", "") == "running"
+	full_review_cancel.disabled = pending or full_review.get("status", "") != "running"
 	if not review.is_empty():
 		status.text = "복기 %d/%d수 · %s" % [view_ply(), self.state.moves.size(), status.text]
 	if not analysis_preview.is_empty():

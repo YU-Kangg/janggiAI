@@ -38,6 +38,16 @@ func run() -> void:
 		await wait_idle()
 	check(app.state.moves.size() == 2 and app.state.turn == "cho", "NNUE AI reply")
 	var live_fen: String = app.state.fen
+	app.start_full_review()
+	await wait_idle()
+	check(app.full_review.status == "running" and app.full_review.total == 2, "full review starts in background")
+	for attempt in range(100):
+		if app.full_review.status != "running":
+			break
+		await create_timer(0.1).timeout
+		app.request_state()
+		await wait_idle()
+	check(app.full_review.status == "complete" and app.full_review.results.size() == 2, "full review progress and completion")
 	app.show_review(0)
 	await wait_idle()
 	check(app.review.moves.size() == 0 and app.state.moves.size() == 2, "review preserves live history")
