@@ -25,6 +25,12 @@ var analysis_preview: Dictionary = {}
 var analysis_move := ""
 var analysis_stage := 0
 var analysis_generation := 0
+var variation: Dictionary = {}
+var variation_start_ply := -1
+var variation_moves: Array = []
+var variation_start := Button.new()
+var variation_undo := Button.new()
+var variation_resume := Button.new()
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -95,6 +101,18 @@ func _ready() -> void:
 	review_analysis_button.custom_minimum_size.y = 44
 	review_analysis_button.pressed.connect(start_review_analysis)
 	navigation.add_child(review_analysis_button)
+	variation_start.text = "자유 분석"
+	variation_start.custom_minimum_size.y = 44
+	variation_start.pressed.connect(start_variation)
+	navigation.add_child(variation_start)
+	variation_undo.text = "분기 무르기"
+	variation_undo.custom_minimum_size.y = 44
+	variation_undo.pressed.connect(undo_variation)
+	navigation.add_child(variation_undo)
+	variation_resume.text = "재개"
+	variation_resume.custom_minimum_size.y = 44
+	variation_resume.pressed.connect(resume_review)
+	navigation.add_child(variation_resume)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
 	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
@@ -172,6 +190,16 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 			play_review_analysis(payload)
 		render_board()
 		return
+	if current_path == "variation":
+		if not payload.get("variation") is Dictionary or not payload.has("fen") or not payload.has("legalMoves"):
+			message.text = "자유 분석 응답 형식이 올바르지 않습니다."
+		else:
+			variation = payload
+			variation_moves = payload.variation.moves.duplicate()
+			selected = ""
+			message.text = "자유 분석 중 · 초와 한을 번갈아 둘 수 있습니다."
+		render_board()
+		return
 	if not payload.has("fen") or not payload.has("legalMoves"):
 		message.text = "장기 서버 응답이 아닙니다."
 		return
@@ -188,6 +216,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		cancel_device_recommendation(false)
 		review = {}
 		clear_review_analysis()
+		clear_variation()
 		selected = ""
 	if current_path != "game" or changed:
 		message.text = ""
@@ -205,7 +234,7 @@ func view_ply() -> int:
 	return review.moves.size() if not review.is_empty() else state.get("moves", []).size()
 
 func show_review(ply: int) -> void:
-	if pending or state.is_empty() or ply < 0 or ply > state.moves.size():
+	if pending or state.is_empty() or not variation.is_empty() or ply < 0 or ply > state.moves.size():
 		return
 	cancel_device_recommendation(false)
 	clear_review_analysis()
@@ -218,9 +247,47 @@ func return_live() -> void:
 	cancel_device_recommendation(false)
 	review = {}
 	clear_review_analysis()
+	clear_variation()
 	selected = ""
 	message.text = ""
 	render_board()
+
+func start_variation() -> void:
+	if pending or review.is_empty() or not variation.is_empty():
+		return
+	cancel_device_recommendation(false)
+	clear_review_analysis()
+	variation_start_ply = view_ply()
+	variation_moves = []
+	send("variation", {"revision": state.revision, "basePly": variation_start_ply, "moves": variation_moves})
+
+func play_variation_move(move: String) -> void:
+	if pending or variation.is_empty() or not variation.legalMoves.has(move):
+		return
+	var next_moves := variation_moves.duplicate()
+	next_moves.append(move)
+	send("variation", {"revision": state.revision, "basePly": variation_start_ply, "moves": next_moves})
+
+func undo_variation() -> void:
+	if pending or variation.is_empty() or variation_moves.is_empty():
+		return
+	var next_moves := variation_moves.duplicate()
+	next_moves.pop_back()
+	send("variation", {"revision": state.revision, "basePly": variation_start_ply, "moves": next_moves})
+
+func resume_review() -> void:
+	if pending or variation.is_empty():
+		return
+	cancel_device_recommendation(false)
+	clear_variation()
+	selected = ""
+	message.text = "복기를 재개했습니다."
+	render_board()
+
+func clear_variation() -> void:
+	variation = {}
+	variation_start_ply = -1
+	variation_moves = []
 
 func start_review_analysis() -> void:
 	if pending or review.is_empty() or view_ply() < 1:
@@ -286,19 +353,27 @@ func split_move(move: String) -> PackedStringArray:
 	return PackedStringArray([found.get_string(1), found.get_string(2)]) if found else PackedStringArray()
 
 func pass_turn() -> void:
-	for move in state.get("legalMoves", []):
+	var position: Dictionary = variation if not variation.is_empty() else state
+	for move in position.get("legalMoves", []):
 		var pair := split_move(move)
 		if pair.size() == 2 and pair[0] == pair[1]:
-			act("move", {"move": move})
+			if variation.is_empty():
+				act("move", {"move": move})
+			else:
+				play_variation_move(move)
 			return
 
 func choose(square: String, piece: String) -> void:
-	if pending or not review.is_empty():
+	if pending or (not review.is_empty() and variation.is_empty()):
 		return
-	if selected != "" and selected != square and state.legalMoves.has(selected + square):
-		act("move", {"move": selected + square})
+	var position: Dictionary = variation if not variation.is_empty() else state
+	if selected != "" and selected != square and position.legalMoves.has(selected + square):
+		if variation.is_empty():
+			act("move", {"move": selected + square})
+		else:
+			play_variation_move(selected + square)
 		return
-	var own: bool = piece != "" and ((piece == piece.to_upper()) == (state.turn == "cho"))
+	var own: bool = piece != "" and ((piece == piece.to_upper()) == (position.turn == "cho"))
 	selected = square if own and selected != square else ""
 	render_board()
 
@@ -346,7 +421,8 @@ func on_device_recommendation(result: Dictionary) -> void:
 	render_board()
 
 func render_board() -> void:
-	render_position(analysis_preview if not analysis_preview.is_empty() else (state if review.is_empty() else review))
+	var position: Dictionary = variation if not variation.is_empty() else (analysis_preview if not analysis_preview.is_empty() else (state if review.is_empty() else review))
+	render_position(position)
 
 func render_position(state: Dictionary) -> void:
 	history.disabled = pending or self.state.is_empty()
@@ -373,7 +449,7 @@ func render_position(state: Dictionary) -> void:
 			else:
 				pieces[String.chr(97 + file) + str(10 - row)] = token
 				file += 1
-	var ai_turn: bool = state.mode == "ai" and state.turn != state.humanSide
+	var ai_turn: bool = variation.is_empty() and state.mode == "ai" and state.turn != state.humanSide
 	var flipped: bool = state.mode == "ai" and state.humanSide == "han"
 	var labels := {"k": "궁", "a": "사", "r": "차", "n": "마", "b": "상", "c": "포", "p": "졸"}
 	for row in range(10):
@@ -399,7 +475,7 @@ func render_position(state: Dictionary) -> void:
 				button.modulate = Color(1, 0.78, 0.2)
 			elif review_recommendation.size() == 2 and analysis_stage == 2 and square == review_recommendation[1]:
 				button.modulate = Color(0.35, 1, 0.55)
-			button.disabled = not review.is_empty() or (pending and current_path != "game") or ai_turn or state.outcome.over
+			button.disabled = (not review.is_empty() and variation.is_empty()) or (pending and current_path != "game") or ai_turn or state.outcome.over
 			button.pressed.connect(choose.bind(square, piece))
 			grid.add_child(button)
 			squares[square] = button
@@ -434,3 +510,9 @@ func render_position(state: Dictionary) -> void:
 	review_buttons[2].disabled = pending or review.is_empty() or view_ply() >= self.state.moves.size()
 	review_buttons[3].disabled = pending or review.is_empty()
 	review_analysis_button.disabled = pending or review.is_empty() or view_ply() < 1
+	for button in review_buttons:
+		button.disabled = button.disabled or not variation.is_empty()
+	review_analysis_button.disabled = review_analysis_button.disabled or not variation.is_empty()
+	variation_start.disabled = pending or review.is_empty() or not variation.is_empty()
+	variation_undo.disabled = pending or variation.is_empty() or variation_moves.is_empty()
+	variation_resume.disabled = pending or variation.is_empty()

@@ -86,3 +86,28 @@ test('HTTP 복기는 초기·중간·최종 장면 조회만 수행하고 범위
   for (const ply of [-1, 3, 0.5, '1']) assert.equal((await request(ply)).status, 400);
   assert.equal((await request(1, 0)).status, 409);
 });
+
+test('자유 분석 분기는 양쪽 합법 수를 진행하고 원본 기보를 변경하지 않음', async () => {
+  const game = new Game();
+  await act(game, 'move', { move: 'a4b4' });
+  await act(game, 'move', { move: 'a7b7' });
+  const before = game.snapshot();
+
+  const start = await act(game, 'variation', { basePly: 1, moves: [] });
+  assert.equal(start.turn, 'han');
+  assert.ok(start.legalMoves.includes('a7b7'));
+  assert.deepEqual(start.variation, { basePly: 1, moves: [] });
+
+  const first = await act(game, 'variation', { basePly: 1, moves: ['a7b7'] });
+  assert.equal(first.turn, 'cho');
+  assert.ok(first.legalMoves.includes('i4h4'));
+  const second = await act(game, 'variation', { basePly: 1, moves: ['a7b7', 'i4h4'] });
+  assert.equal(second.turn, 'han');
+  assert.equal(second.moves.length, 3);
+  assert.deepEqual(game.snapshot(), before);
+
+  await assert.rejects(act(game, 'variation', { basePly: 3, moves: [] }), /시작 수 번호/);
+  await assert.rejects(act(game, 'variation', { basePly: 1, moves: ['a1a10'] }), /합법적이지 않은/);
+  await assert.rejects(act(game, 'variation', { basePly: 1, moves: 'a7b7' }), /수순 형식/);
+  assert.deepEqual(game.snapshot(), before);
+});

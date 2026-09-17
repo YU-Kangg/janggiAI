@@ -101,6 +101,19 @@ export class Game {
       const moves = this.moves.slice(0, data.ply);
       return { ...state, ...rulePosition(moves, initialFen(this.setup)), moves, legalMoves: [], canUndo: false };
     }
+    if (action === 'variation') {
+      if (!Number.isInteger(data.basePly) || data.basePly < 0 || data.basePly > this.moves.length) throw fail('분기 시작 수 번호가 올바르지 않습니다.', 400);
+      if (!Array.isArray(data.moves) || data.moves.length > 128 || data.moves.some(move => typeof move !== 'string')) {
+        throw fail('분기 수순 형식이 올바르지 않습니다.', 400);
+      }
+      const baseMoves = this.moves.slice(0, data.basePly);
+      const moves = [...baseMoves, ...data.moves];
+      const position = rulePosition(moves, initialFen(this.setup));
+      return {
+        ...state, ...position, moves, revision: this.revision, legalMoves: position.legalMoves,
+        canUndo: data.moves.length > 0, variation: { basePly: data.basePly, moves: [...data.moves] },
+      };
+    }
     if (action === 'review-analysis') {
       if (!Number.isInteger(data.ply) || data.ply < 1 || data.ply > this.moves.length) throw fail('분석할 실제 수 번호가 올바르지 않습니다.', 400);
       if (this.aiJob) throw fail('AI 응수가 끝난 뒤 복기 분석을 시작하세요.');
