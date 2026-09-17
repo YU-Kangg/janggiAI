@@ -9,6 +9,7 @@ var api := HTTPRequest.new()
 var endpoint := LineEdit.new()
 var status := Label.new()
 var message := Label.new()
+var score_panel := Label.new()
 var grid := GridContainer.new()
 var side := OptionButton.new()
 var action_buttons: Array[Button] = []
@@ -31,6 +32,8 @@ var variation_moves: Array = []
 var variation_start := Button.new()
 var variation_undo := Button.new()
 var variation_resume := Button.new()
+var variation_evaluation: Dictionary = {}
+var variation_evaluation_target := ""
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -61,6 +64,8 @@ func _ready() -> void:
 	status.text = "서버에 연결 중…"
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(status)
+	score_panel.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(score_panel)
 	side.add_item("초로 AI 대국")
 	side.add_item("한으로 AI 대국")
 	column.add_child(side)
@@ -198,6 +203,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 			variation_moves = payload.variation.moves.duplicate()
 			selected = ""
 			message.text = "자유 분석 중 · 초와 한을 번갈아 둘 수 있습니다."
+			schedule_variation_evaluation()
 		render_board()
 		return
 	if not payload.has("fen") or not payload.has("legalMoves"):
@@ -285,9 +291,29 @@ func resume_review() -> void:
 	render_board()
 
 func clear_variation() -> void:
+	variation_evaluation_target = ""
+	variation_evaluation = {}
 	variation = {}
 	variation_start_ply = -1
 	variation_moves = []
+
+func schedule_variation_evaluation() -> void:
+	variation_evaluation = {}
+	variation_evaluation_target = str(variation.get("fen", ""))
+	if variation.get("outcome", {}).get("over", false):
+		variation_evaluation_target = ""
+		return
+	if device_engine.busy():
+		device_engine.cancel()
+		return
+	start_variation_evaluation()
+
+func start_variation_evaluation() -> void:
+	if variation.is_empty() or variation_evaluation_target == "" or not device_engine.available() or device_engine.busy():
+		return
+	device_request = {"purpose": "variation-evaluation", "revision": state.revision, "fen": variation.fen}
+	if not device_engine.start(str(variation.initialFen), PackedStringArray(variation.moves)):
+		device_request = {}
 
 func start_review_analysis() -> void:
 	if pending or review.is_empty() or view_ply() < 1:
@@ -403,6 +429,16 @@ func on_device_recommendation(result: Dictionary) -> void:
 	var position: Dictionary = state if review.is_empty() else review
 	var expected := device_request
 	device_request = {}
+	if expected.get("purpose", "") == "variation-evaluation":
+		if not result.has("error") and not variation.is_empty() and state.revision == expected.revision and variation.fen == expected.fen and result.get("fen", "") == variation.fen:
+			variation_evaluation = {
+				"unit": str(result.get("evaluation_unit", "")), "cho": int(result.get("evaluation_cho", 0)),
+				"depth": int(result.get("depth", 0)), "elapsedMs": int(result.get("elapsed_ms", 0)),
+			}
+		if not variation.is_empty() and variation_evaluation_target != "" and variation.fen != expected.get("fen", ""):
+			call_deferred("start_variation_evaluation")
+		render_board()
+		return
 	if expected.is_empty():
 		render_board()
 		return
@@ -430,6 +466,7 @@ func render_position(state: Dictionary) -> void:
 		button.disabled = pending or self.state.is_empty()
 	review_analysis_button.disabled = pending or review.is_empty() or view_ply() < 1
 	if state.is_empty():
+		score_panel.text = ""
 		for button in action_buttons:
 			button.disabled = true
 		device_recommend.disabled = true
@@ -486,14 +523,25 @@ func render_position(state: Dictionary) -> void:
 		status.text = "대국 종료: %s · %s" % [state.outcome.result, state.outcome.reason]
 	if state.ai.status == "error":
 		status.text += " · " + str(state.ai.error)
+	var points: Dictionary = state.get("points", {})
+	var cho_points := float(points.get("cho", 0.0))
+	var han_points := float(points.get("han", 0.0))
+	score_panel.text = "기물 점수 · 초 %.1f / 한 %.1f · 차이 %+.1f" % [cho_points, han_points, cho_points - han_points]
+	if not variation.is_empty():
+		if variation_evaluation.is_empty():
+			score_panel.text += " · 기기 형세 계산 중…" if device_engine.available() else " · 기기 형세 사용 불가"
+		elif variation_evaluation.unit == "cp":
+			score_panel.text += " · 기기 고전평가 초 %+.0fcp · 깊이 %d" % [float(variation_evaluation.cho), int(variation_evaluation.depth)]
+		else:
+			score_panel.text += " · 기기 고전평가 강제승패 %s" % str(variation_evaluation.cho)
 	for button in action_buttons:
 		button.disabled = not review.is_empty() or (pending and current_path != "game")
 	action_buttons[1].disabled = action_buttons[1].disabled or ai_turn or state.outcome.over or state.inCheck
 	action_buttons[2].disabled = action_buttons[2].disabled or not state.canUndo
 	action_buttons[3].disabled = action_buttons[3].disabled or state.ai.status != "thinking"
 	action_buttons[4].disabled = action_buttons[4].disabled or not state.ai.status in ["paused", "error"]
-	device_recommend.disabled = not device_engine.available() or device_engine.busy() or state.outcome.over or state.legalMoves.is_empty()
-	device_cancel.disabled = not device_engine.busy()
+	device_recommend.disabled = not variation.is_empty() or not device_engine.available() or device_engine.busy() or state.outcome.over or state.legalMoves.is_empty()
+	device_cancel.disabled = not variation.is_empty() or not device_engine.busy()
 	if not review.is_empty():
 		status.text = "복기 %d/%d수 · %s" % [view_ply(), self.state.moves.size(), status.text]
 	if not analysis_preview.is_empty():

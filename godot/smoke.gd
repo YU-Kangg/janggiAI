@@ -66,6 +66,7 @@ func run() -> void:
 	await wait_idle()
 	check(not app.variation.is_empty() and app.variation_start_ply == 1, "variation starts from review position")
 	check(app.variation.turn == "han" and app.variation.legalMoves.has("a7b7"), "both-side legal variation position")
+	check(app.score_panel.text.contains("초 72.0 / 한 73.5") and app.score_panel.text.contains("기기 형세 사용 불가"), "material score and desktop engine fallback")
 	app.squares["a7"].pressed.emit()
 	app.squares["b7"].pressed.emit()
 	await wait_idle()

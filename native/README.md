@@ -34,7 +34,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native.ps1 -Ar
 
 1. 앱에서 엔진 인스턴스 하나를 유지하고 `prepare()` 성공 후 작업 스레드에서 `analyze(initial_fen, moves)`를 한 번 호출합니다.
 2. 초기 차림 16종과 전체 기보를 전달합니다. 엔진이 기보를 합법 수로 재생하고 300ms 또는 깊이 8 중 먼저 도달할 때까지 탐색합니다.
-3. 반환 Dictionary에는 `move`, `fen`, `depth`, `elapsed_ms`, `source` 또는 `error`가 있습니다.
+3. 반환 Dictionary에는 `move`, `fen`, `depth`, `elapsed_ms`, 초 관점의 `evaluation_unit`·`evaluation_cho`, `source` 또는 `error`가 있습니다.
 4. 메인 스레드에서 결과의 FEN·요청 당시 revision·현재 합법 수를 확인한 뒤 표시해야 합니다. 자동 착수하지 않습니다.
 5. 취소·장면 변경·백그라운드 전환 시 `cancel()`하고 작업 스레드를 회수합니다. 준비 후 스레드 시작 실패 시에도 예약 해제가 필요하므로 앱 래퍼에서 반드시 처리해야 합니다.
 

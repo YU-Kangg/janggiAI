@@ -124,6 +124,16 @@ public:
         result["fen"] = String(pos.fen().c_str());
         result["depth"] = int(thread->completedDepth);
         result["elapsed_ms"] = int(SF::now() - limits.startTime);
+        int score = int(thread->rootMoves[0].score);
+        if (pos.side_to_move() != SF::WHITE) score = -score;
+        if (std::abs(score) >= int(SF::VALUE_MATE_IN_MAX_PLY)) {
+            const int plies = int(SF::VALUE_MATE) - std::abs(score);
+            result["evaluation_unit"] = "mate";
+            result["evaluation_cho"] = (score < 0 ? -1 : 1) * ((plies + 1) / 2);
+        } else {
+            result["evaluation_unit"] = "cp";
+            result["evaluation_cho"] = score;
+        }
         result["source"] = "android-native-classical";
         return result;
     }
