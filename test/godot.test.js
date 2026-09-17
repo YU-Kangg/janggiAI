@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 import { createServer } from '../server/index.js';
 
 const executable = process.env.JANGGI_GODOT_PATH || resolve('.local/godot/Godot_v4.7.2-stable_win64_console.exe');
-test('Godot 실제 클라이언트: 선택·착수·초한 AI 응수·무르기·연결 오류', { skip: !existsSync(executable), timeout: 45000 }, async t => {
+test('Godot 실제 클라이언트: 대국·복기 서버 분석·초한 AI 응수·연결 오류', { skip: !existsSync(executable), timeout: 45000 }, async t => {
   const server = createServer();
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => { server.closeAllConnections(); server.close(); });

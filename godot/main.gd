@@ -19,6 +19,8 @@ var current_path := ""
 var review: Dictionary = {}
 var history := OptionButton.new()
 var review_buttons: Array[Button] = []
+var review_analysis_button := Button.new()
+var review_analysis: Dictionary = {}
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -85,6 +87,10 @@ func _ready() -> void:
 	review_buttons[1].pressed.connect(func(): show_review(view_ply() - 1))
 	review_buttons[2].pressed.connect(func(): show_review(view_ply() + 1))
 	review_buttons[3].pressed.connect(return_live)
+	review_analysis_button.text = "선택 수 서버 분석"
+	review_analysis_button.custom_minimum_size.y = 44
+	review_analysis_button.pressed.connect(start_review_analysis)
+	navigation.add_child(review_analysis_button)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
 	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
@@ -153,6 +159,14 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		selected = ""
 		render_board()
 		return
+	if current_path == "review-analysis":
+		if not payload.has("playedMove") or not payload.has("recommendedMove") or not payload.get("analysis") is Dictionary:
+			message.text = "복기 분석 응답 형식이 올바르지 않습니다."
+		else:
+			review_analysis = payload
+			message.text = format_review_analysis(payload)
+		render_board()
+		return
 	if not payload.has("fen") or not payload.has("legalMoves"):
 		message.text = "장기 서버 응답이 아닙니다."
 		return
@@ -168,6 +182,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 	if changed:
 		cancel_device_recommendation(false)
 		review = {}
+		review_analysis = {}
 		selected = ""
 	if current_path != "game" or changed:
 		message.text = ""
@@ -188,6 +203,7 @@ func show_review(ply: int) -> void:
 	if pending or state.is_empty() or ply < 0 or ply > state.moves.size():
 		return
 	cancel_device_recommendation(false)
+	review_analysis = {}
 	selected = ""
 	send("review", {"revision": state.revision, "ply": ply})
 
@@ -196,9 +212,43 @@ func return_live() -> void:
 		return
 	cancel_device_recommendation(false)
 	review = {}
+	review_analysis = {}
 	selected = ""
 	message.text = ""
 	render_board()
+
+func start_review_analysis() -> void:
+	if pending or review.is_empty() or view_ply() < 1:
+		return
+	review_analysis = {}
+	message.text = "%d수 서버 분석 중…" % view_ply()
+	send("review-analysis", {"revision": state.revision, "ply": view_ply()})
+
+func display_move(move: String) -> String:
+	var pair := split_move(move)
+	return "%s → %s" % [pair[0], pair[1]] if pair.size() == 2 else move
+
+func format_evaluation(value: Variant) -> String:
+	if not value is Dictionary:
+		return "없음"
+	var evaluation: Dictionary = value.get("evaluation", {})
+	if evaluation.get("unit", "") == "cp":
+		var score := int(evaluation.get("cho", 0))
+		return ("+%dcp" if score >= 0 else "%dcp") % score
+	if evaluation.get("unit", "") == "mate":
+		return "강제승패 %s" % str(evaluation.get("cho", 0))
+	return "없음"
+
+func format_review_analysis(payload: Dictionary) -> String:
+	var analysis: Dictionary = payload.analysis
+	var result := "%d수 · 실제 %s · 추천 %s · 전 %s / 후 %s" % [
+		int(payload.ply), display_move(str(payload.playedMove)), display_move(str(payload.recommendedMove)),
+		format_evaluation(analysis.get("before")), format_evaluation(analysis.get("after")),
+	]
+	if analysis.get("lossCp") != null:
+		return result + " · 손실 %dcp" % int(analysis.lossCp)
+	var reasons := {"terminal": "대국 종료", "mate-score": "강제승패 평가", "analysis-unavailable": "평가 없음"}
+	return result + " · 손실 계산 제외(%s)" % str(reasons.get(analysis.get("lossReason", ""), "사유 미확인"))
 
 func split_move(move: String) -> PackedStringArray:
 	var regex := RegEx.new()
@@ -273,6 +323,7 @@ func render_position(state: Dictionary) -> void:
 	history.disabled = pending or self.state.is_empty()
 	for button in review_buttons:
 		button.disabled = pending or self.state.is_empty()
+	review_analysis_button.disabled = pending or review.is_empty() or view_ply() < 1
 	if state.is_empty():
 		for button in action_buttons:
 			button.disabled = true
@@ -346,3 +397,4 @@ func render_position(state: Dictionary) -> void:
 	review_buttons[1].disabled = pending or view_ply() == 0
 	review_buttons[2].disabled = pending or review.is_empty() or view_ply() >= self.state.moves.size()
 	review_buttons[3].disabled = pending or review.is_empty()
+	review_analysis_button.disabled = pending or review.is_empty() or view_ply() < 1
