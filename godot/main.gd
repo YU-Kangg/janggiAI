@@ -242,7 +242,12 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		cancel_device_recommendation(false)
 		review = payload
 		selected = ""
-		message.text = "복기 중에는 착수할 수 없습니다. 현재 대국으로 돌아오세요."
+		var cached := cached_review_result(payload.moves.size())
+		if cached.is_empty():
+			message.text = "복기 중에는 착수할 수 없습니다. 현재 대국으로 돌아오세요."
+		else:
+			review_analysis = cached
+			message.text = format_review_analysis(cached)
 		render_board()
 		return
 	var changed: bool = state.is_empty() or payload.revision != state.revision or payload.fen != state.fen
@@ -360,9 +365,24 @@ func start_variation_evaluation() -> void:
 func start_review_analysis() -> void:
 	if pending or review.is_empty() or view_ply() < 1:
 		return
+	var cached := cached_review_result(view_ply())
+	if not cached.is_empty():
+		clear_review_analysis()
+		review_analysis = cached
+		message.text = format_review_analysis(cached)
+		play_review_analysis(cached)
+		return
 	clear_review_analysis()
 	message.text = "%d수 서버 분석 중…" % view_ply()
 	send("review-analysis", {"revision": state.revision, "ply": view_ply()})
+
+func cached_review_result(ply: int) -> Dictionary:
+	if full_review.get("status", "") != "complete":
+		return {}
+	for item in full_review.get("results", []):
+		if int(item.get("ply", -1)) == ply:
+			return item
+	return {}
 
 func clear_review_analysis() -> void:
 	analysis_generation += 1
@@ -407,7 +427,7 @@ func format_evaluation(value: Variant) -> String:
 func format_review_analysis(payload: Dictionary) -> String:
 	var analysis: Dictionary = payload.analysis
 	var classification: Dictionary = payload.get("classification", {})
-	var result := "%d수 · 실험 등급 %s · 서버 추천 재생 · 전 %s / 실제 수 후 %s" % [
+	var result := "%d수 · 실험 등급 %s · 서버 추천 · 전 %s / 실제 수 후 %s" % [
 		int(payload.ply), str(classification.get("label", "분류 제외")),
 		format_evaluation(analysis.get("before")), format_evaluation(analysis.get("after")),
 	]
