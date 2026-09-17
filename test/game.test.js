@@ -41,6 +41,8 @@ test('실제 janggi 엔진: 합법 수, 한수쉼, 추천, 되돌리기, 요청 
   assert.equal(reviewAnalysis.data.match, reviewAnalysis.data.recommendedMove === 'a4b4');
   assert.equal(reviewAnalysis.data.beforeFen, initial.data.fen);
   assert.equal(reviewAnalysis.data.recommendedFen, moved.data.fen);
+  assert.equal(reviewAnalysis.data.prediction.moves[0], reviewAnalysis.data.recommendedMove);
+  assert.equal(reviewAnalysis.data.prediction.fens.length, reviewAnalysis.data.prediction.moves.length + 1);
   assert.equal(reviewAnalysis.data.analysis.before.evaluation.unit, 'cp');
   assert.ok(Number.isInteger(reviewAnalysis.data.analysis.before.evaluation.cho));
   assert.ok(reviewAnalysis.data.analysis.before.depth > 0);

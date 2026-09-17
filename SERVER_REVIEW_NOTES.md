@@ -52,6 +52,7 @@
 - `cp`는 Fairy-Stockfish의 내부 평가 단위이며 공식 장기 기물 점수가 아닙니다.
 - 실제 수가 대국을 끝내면 착수 후 검색을 생략하고 `lossReason`을 `terminal`로 반환합니다.
 - `beforeFen`과 `recommendedFen`은 클라이언트가 좌표 문구 대신 추천 수를 판 위에서 재생할 때 사용합니다.
+- `prediction.moves`와 `prediction.fens`는 엔진 PV를 서버 규칙으로 재검증한 예상 수순과 각 중간 장면입니다.
 - 두 평가 중 하나가 없으면 `analysis-unavailable`, 하나라도 강제 승패인 `mate` 평가이면 `mate-score`를 반환합니다. 이 경우 cp 손실을 임의로 만들지 않습니다.
 
 ## 실험적 수 등급

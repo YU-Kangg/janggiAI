@@ -46,6 +46,9 @@ var retry_review_ply := -1
 var retry_expected_move := ""
 var retry_hint_button := Button.new()
 var retry_hint_stage := 0
+var prediction_button := Button.new()
+var prediction_index := -1
+var prediction_generation := 0
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -152,6 +155,10 @@ func _ready() -> void:
 	retry_hint_button.custom_minimum_size.y = 44
 	retry_hint_button.pressed.connect(show_retry_hint)
 	navigation.add_child(retry_hint_button)
+	prediction_button.text = "예상 수순"
+	prediction_button.custom_minimum_size.y = 44
+	prediction_button.pressed.connect(play_prediction)
+	navigation.add_child(prediction_button)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
 	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
@@ -462,10 +469,37 @@ func next_key_move() -> void:
 
 func clear_review_analysis() -> void:
 	analysis_generation += 1
+	prediction_generation += 1
+	prediction_index = -1
 	review_analysis = {}
 	analysis_preview = {}
 	analysis_move = ""
 	analysis_stage = 0
+
+func play_prediction() -> void:
+	if pending or review.is_empty() or not variation.is_empty() or review_analysis.is_empty():
+		return
+	var fens: Array = review_analysis.get("prediction", {}).get("fens", [])
+	if fens.size() < 2:
+		return
+	prediction_generation += 1
+	var generation := prediction_generation
+	analysis_generation += 1
+	analysis_move = ""
+	analysis_stage = 0
+	for index in range(fens.size()):
+		if generation != prediction_generation or review.is_empty() or not variation.is_empty():
+			return
+		var preview := review.duplicate(true)
+		preview["fen"] = fens[index]
+		preview["legalMoves"] = []
+		preview["outcome"] = {"over": false, "result": "*", "winner": null, "reason": null}
+		analysis_preview = preview
+		prediction_index = index
+		message.text = "엔진 예상 수순 재생 · %d/%d" % [index, fens.size() - 1]
+		render_board()
+		if index < fens.size() - 1:
+			await get_tree().create_timer(0.55).timeout
 
 func play_review_analysis(payload: Dictionary) -> void:
 	analysis_generation += 1
@@ -715,3 +749,4 @@ func render_position(state: Dictionary) -> void:
 	next_key_move_button.disabled = pending or review.is_empty() or not variation.is_empty() or next_key_ply(view_ply()) < 0
 	retry_button.disabled = pending or review.is_empty() or not variation.is_empty() or view_ply() < 1 or cached_review_result(view_ply()).is_empty()
 	retry_hint_button.disabled = pending or not retry_mode or variation.is_empty() or not variation_moves.is_empty() or retry_hint_stage >= 2
+	prediction_button.disabled = pending or review.is_empty() or not variation.is_empty() or review_analysis.get("prediction", {}).get("fens", []).size() < 2

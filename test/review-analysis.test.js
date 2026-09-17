@@ -15,7 +15,7 @@ test('선택한 실제 수의 착수 전후 평가 손실을 계산하고 대국
   const game = new Game({ recommendMove: async (moves, fen) => {
     calls.push({ moves: [...moves], fen });
     const result = results[calls.length - 1];
-    return { move: result.move, budgetMs: 300, source: 'test-engine', analysis: { evaluation: { unit: 'cp', cho: result.cho } } };
+    return { move: result.move, budgetMs: 300, source: 'test-engine', analysis: { evaluation: { unit: 'cp', cho: result.cho }, pv: [result.move] } };
   } });
   await act(game, 'move', { move: 'a4b4' });
   await act(game, 'move', { move: 'a7b7' });
@@ -28,6 +28,8 @@ test('선택한 실제 수의 착수 전후 평가 손실을 계산하고 대국
   assert.equal(first.recommendedMove, 'a4b4');
   assert.equal(first.beforeFen, before.initialFen);
   assert.notEqual(first.recommendedFen, first.beforeFen);
+  assert.deepEqual(first.prediction.moves, ['a4b4']);
+  assert.equal(first.prediction.fens.length, 2);
   assert.equal(first.match, true);
   assert.equal(first.classification.key, 'best');
   assert.equal(first.analysis.rawLossCp, 10);

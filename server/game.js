@@ -28,11 +28,22 @@ function reviewEntry({ revision, ply, position, result, afterPosition, afterResu
     lossCp = Math.max(0, rawLossCp);
   }
   const recommendedPosition = rulePosition([...position.moves, result.move], position.initialFen);
+  const predictionMoves = [];
+  const predictionFens = [position.fen];
+  let predictionHistory = [...position.moves];
+  for (const move of result.analysis?.pv ?? []) {
+    const current = rulePosition(predictionHistory, position.initialFen);
+    if (current.outcome.over || !current.legalMoves.includes(move)) break;
+    predictionHistory.push(move);
+    predictionMoves.push(move);
+    predictionFens.push(rulePosition(predictionHistory, position.initialFen).fen);
+  }
   const match = playedMove === result.move;
   return {
     revision, ply, side: position.turn, playedMove,
     recommendedMove: result.move, match, classification: classifyMove(match, lossCp),
     beforeFen: position.fen, recommendedFen: recommendedPosition.fen,
+    prediction: { moves: predictionMoves, fens: predictionFens },
     budgetMs: result.budgetMs, source: result.source,
     analysis: {
       before: result.analysis ?? null, after: afterResult?.analysis ?? null,

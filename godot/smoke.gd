@@ -85,6 +85,10 @@ func run() -> void:
 	check(app.analysis_stage == 1 and app.analysis_preview.fen == app.review_analysis.beforeFen, "recommendation source highlight")
 	await create_timer(0.6).timeout
 	check(app.analysis_stage == 2 and app.analysis_preview.fen == app.review_analysis.recommendedFen, "recommended piece movement")
+	check(app.review_analysis.prediction.fens.size() >= 2, "prediction positions available")
+	app.play_prediction()
+	await create_timer(0.65).timeout
+	check(app.prediction_index >= 1 and app.message.text.contains("예상 수순"), "prediction auto playback")
 	var retry_move: String = app.review_analysis.recommendedMove
 	app.start_retry()
 	await wait_idle()
