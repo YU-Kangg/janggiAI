@@ -114,6 +114,7 @@ export class Game {
       const playedMove = this.moves[moveIndex];
       const afterMoves = [...moves, playedMove];
       const afterPosition = rulePosition(afterMoves, initialFen(this.setup));
+      const recommendedPosition = rulePosition([...moves, result.move], initialFen(this.setup));
       let afterResult = null;
       if (!afterPosition.outcome.over) {
         afterResult = await this.recommendMove(afterMoves, initialFen(this.setup));
@@ -136,6 +137,7 @@ export class Game {
       return {
         revision, ply: data.ply, side: position.turn, playedMove,
         recommendedMove: result.move, match: playedMove === result.move,
+        beforeFen: position.fen, recommendedFen: recommendedPosition.fen,
         budgetMs: result.budgetMs, source: result.source,
         analysis: {
           before: result.analysis ?? null,

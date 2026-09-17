@@ -21,6 +21,10 @@ var history := OptionButton.new()
 var review_buttons: Array[Button] = []
 var review_analysis_button := Button.new()
 var review_analysis: Dictionary = {}
+var analysis_preview: Dictionary = {}
+var analysis_move := ""
+var analysis_stage := 0
+var analysis_generation := 0
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -160,11 +164,12 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		render_board()
 		return
 	if current_path == "review-analysis":
-		if not payload.has("playedMove") or not payload.has("recommendedMove") or not payload.get("analysis") is Dictionary:
+		if not payload.has("recommendedMove") or not payload.has("beforeFen") or not payload.has("recommendedFen") or not payload.get("analysis") is Dictionary:
 			message.text = "복기 분석 응답 형식이 올바르지 않습니다."
 		else:
 			review_analysis = payload
 			message.text = format_review_analysis(payload)
+			play_review_analysis(payload)
 		render_board()
 		return
 	if not payload.has("fen") or not payload.has("legalMoves"):
@@ -182,7 +187,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 	if changed:
 		cancel_device_recommendation(false)
 		review = {}
-		review_analysis = {}
+		clear_review_analysis()
 		selected = ""
 	if current_path != "game" or changed:
 		message.text = ""
@@ -203,7 +208,7 @@ func show_review(ply: int) -> void:
 	if pending or state.is_empty() or ply < 0 or ply > state.moves.size():
 		return
 	cancel_device_recommendation(false)
-	review_analysis = {}
+	clear_review_analysis()
 	selected = ""
 	send("review", {"revision": state.revision, "ply": ply})
 
@@ -212,7 +217,7 @@ func return_live() -> void:
 		return
 	cancel_device_recommendation(false)
 	review = {}
-	review_analysis = {}
+	clear_review_analysis()
 	selected = ""
 	message.text = ""
 	render_board()
@@ -220,13 +225,38 @@ func return_live() -> void:
 func start_review_analysis() -> void:
 	if pending or review.is_empty() or view_ply() < 1:
 		return
-	review_analysis = {}
+	clear_review_analysis()
 	message.text = "%d수 서버 분석 중…" % view_ply()
 	send("review-analysis", {"revision": state.revision, "ply": view_ply()})
 
-func display_move(move: String) -> String:
-	var pair := split_move(move)
-	return "%s → %s" % [pair[0], pair[1]] if pair.size() == 2 else move
+func clear_review_analysis() -> void:
+	analysis_generation += 1
+	review_analysis = {}
+	analysis_preview = {}
+	analysis_move = ""
+	analysis_stage = 0
+
+func play_review_analysis(payload: Dictionary) -> void:
+	analysis_generation += 1
+	var generation := analysis_generation
+	var preview := review.duplicate(true)
+	preview["fen"] = payload.beforeFen
+	preview["turn"] = payload.side
+	preview["moves"] = state.moves.slice(0, int(payload.ply) - 1)
+	preview["legalMoves"] = []
+	preview["outcome"] = {"over": false, "result": "*", "winner": null, "reason": null}
+	analysis_preview = preview
+	analysis_move = str(payload.recommendedMove)
+	analysis_stage = 1
+	render_board()
+	await get_tree().create_timer(0.45).timeout
+	if generation != analysis_generation or review.is_empty():
+		return
+	analysis_preview["fen"] = payload.recommendedFen
+	analysis_preview["moves"] = state.moves.slice(0, int(payload.ply) - 1)
+	analysis_preview.moves.append(payload.recommendedMove)
+	analysis_stage = 2
+	render_board()
 
 func format_evaluation(value: Variant) -> String:
 	if not value is Dictionary:
@@ -241,9 +271,8 @@ func format_evaluation(value: Variant) -> String:
 
 func format_review_analysis(payload: Dictionary) -> String:
 	var analysis: Dictionary = payload.analysis
-	var result := "%d수 · 실제 %s · 추천 %s · 전 %s / 후 %s" % [
-		int(payload.ply), display_move(str(payload.playedMove)), display_move(str(payload.recommendedMove)),
-		format_evaluation(analysis.get("before")), format_evaluation(analysis.get("after")),
+	var result := "%d수 서버 추천 재생 · 전 %s / 실제 수 후 %s" % [
+		int(payload.ply), format_evaluation(analysis.get("before")), format_evaluation(analysis.get("after")),
 	]
 	if analysis.get("lossCp") != null:
 		return result + " · 손실 %dcp" % int(analysis.lossCp)
@@ -317,7 +346,7 @@ func on_device_recommendation(result: Dictionary) -> void:
 	render_board()
 
 func render_board() -> void:
-	render_position(state if review.is_empty() else review)
+	render_position(analysis_preview if not analysis_preview.is_empty() else (state if review.is_empty() else review))
 
 func render_position(state: Dictionary) -> void:
 	history.disabled = pending or self.state.is_empty()
@@ -365,6 +394,11 @@ func render_position(state: Dictionary) -> void:
 				button.modulate = Color(1, 0.85, 0.35)
 			elif recommendation.size() == 2 and square == recommendation[1]:
 				button.modulate = Color(0.45, 1, 0.65)
+			var review_recommendation := split_move(analysis_move)
+			if review_recommendation.size() == 2 and square == review_recommendation[0]:
+				button.modulate = Color(1, 0.78, 0.2)
+			elif review_recommendation.size() == 2 and analysis_stage == 2 and square == review_recommendation[1]:
+				button.modulate = Color(0.35, 1, 0.55)
 			button.disabled = not review.is_empty() or (pending and current_path != "game") or ai_turn or state.outcome.over
 			button.pressed.connect(choose.bind(square, piece))
 			grid.add_child(button)
@@ -386,6 +420,8 @@ func render_position(state: Dictionary) -> void:
 	device_cancel.disabled = not device_engine.busy()
 	if not review.is_empty():
 		status.text = "복기 %d/%d수 · %s" % [view_ply(), self.state.moves.size(), status.text]
+	if not analysis_preview.is_empty():
+		status.text = "서버 추천 수 재생 · " + status.text
 	history.clear()
 	history.add_item("0수 · 시작 배치")
 	for index in range(self.state.moves.size()):

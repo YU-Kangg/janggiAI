@@ -21,6 +21,8 @@
   "playedMove": "a4b4",
   "recommendedMove": "a4b4",
   "match": true,
+  "beforeFen": "...",
+  "recommendedFen": "...",
   "budgetMs": 300,
   "source": "local-server",
   "analysis": {
@@ -49,6 +51,7 @@
 - 짧은 탐색 결과가 흔들려 `rawLossCp`가 음수가 될 수 있습니다. 화면용 `lossCp`는 이때 0으로 제한하지만 원값은 진단과 향후 보정에 쓰도록 보존합니다.
 - `cp`는 Fairy-Stockfish의 내부 평가 단위이며 공식 장기 기물 점수가 아닙니다.
 - 실제 수가 대국을 끝내면 착수 후 검색을 생략하고 `lossReason`을 `terminal`로 반환합니다.
+- `beforeFen`과 `recommendedFen`은 클라이언트가 좌표 문구 대신 추천 수를 판 위에서 재생할 때 사용합니다.
 - 두 평가 중 하나가 없으면 `analysis-unavailable`, 하나라도 강제 승패인 `mate` 평가이면 `mate-score`를 반환합니다. 이 경우 cp 손실을 임의로 만들지 않습니다.
 
 ## 제약과 결정이 필요한 부분
@@ -64,5 +67,5 @@
 
 1. 여러 수를 순서대로 처리하는 전체 기보 리뷰 작업과 진행률 API
 2. 같은 위치와 분석 조건의 결과 캐시
-3. Godot 복기 화면의 한 수 분석 표시는 구현 완료. 다음에는 추천 수를 착수 전 장면에 시각화
+3. Godot 복기 화면의 한 수 분석과 추천 수 판 위 재생은 구현 완료. 다음에는 기물 이동을 Tween으로 부드럽게 표현
 4. 수집 기보와 장시간 탐색을 이용한 수 등급 임계값 실험

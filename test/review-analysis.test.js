@@ -26,6 +26,8 @@ test('선택한 실제 수의 착수 전후 평가 손실을 계산하고 대국
   assert.equal(first.side, 'cho');
   assert.equal(first.playedMove, 'a4b4');
   assert.equal(first.recommendedMove, 'a4b4');
+  assert.equal(first.beforeFen, before.initialFen);
+  assert.notEqual(first.recommendedFen, first.beforeFen);
   assert.equal(first.match, true);
   assert.equal(first.analysis.rawLossCp, 10);
   assert.equal(first.analysis.lossCp, 10);
