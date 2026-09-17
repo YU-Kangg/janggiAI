@@ -29,6 +29,7 @@ test('선택한 실제 수의 착수 전후 평가 손실을 계산하고 대국
   assert.equal(first.beforeFen, before.initialFen);
   assert.notEqual(first.recommendedFen, first.beforeFen);
   assert.equal(first.match, true);
+  assert.equal(first.classification.key, 'best');
   assert.equal(first.analysis.rawLossCp, 10);
   assert.equal(first.analysis.lossCp, 10);
   assert.equal(first.analysis.lossReason, null);
@@ -39,6 +40,7 @@ test('선택한 실제 수의 착수 전후 평가 손실을 계산하고 대국
   assert.equal(second.recommendedMove, 'a7b7');
   assert.equal(second.analysis.rawLossCp, 5);
   assert.equal(second.analysis.lossCp, 5);
+  assert.equal(second.classification.key, 'best');
   assert.deepEqual(calls.map(call => call.moves), [[], ['a4b4'], ['a4b4'], ['a4b4', 'a7b7']]);
   assert.equal(calls[0].fen, before.initialFen);
   assert.deepEqual(game.snapshot(), before);
@@ -46,7 +48,7 @@ test('선택한 실제 수의 착수 전후 평가 손실을 계산하고 대국
 
 test('짧은 탐색 오차로 착수 후 평가가 좋아지면 손실은 0으로 보정하고 원값은 보존', async () => {
   const game = new Game({ recommendMove: async moves => ({
-    move: moves.length ? 'a7b7' : 'a4b4', budgetMs: 300, source: 'test-engine',
+    move: moves.length ? 'a7b7' : 'i4h4', budgetMs: 300, source: 'test-engine',
     analysis: { evaluation: { unit: 'cp', cho: moves.length ? 25 : 20 } },
   }) });
   await act(game, 'move', { move: 'a4b4' });
@@ -54,6 +56,7 @@ test('짧은 탐색 오차로 착수 후 평가가 좋아지면 손실은 0으�
   assert.equal(result.analysis.rawLossCp, -5);
   assert.equal(result.analysis.lossCp, 0);
   assert.equal(result.analysis.lossReason, null);
+  assert.equal(result.classification.key, 'excellent');
 });
 
 test('대국을 끝낸 수는 착수 후 엔진을 호출하지 않고 평가 손실 사유를 반환', async () => {

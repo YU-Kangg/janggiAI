@@ -58,6 +58,7 @@ func run() -> void:
 	check(app.review_analysis.analysis.before.evaluation.unit == "cp", "before evaluation")
 	check(app.review_analysis.analysis.after.evaluation.unit == "cp", "after evaluation")
 	check(app.message.text.contains("손실"), "analysis result display")
+	check(app.message.text.contains("실험 등급 최선"), "experimental move classification")
 	check(not app.message.text.contains("a4") and not app.message.text.contains("→"), "move coordinates hidden from result text")
 	check(app.analysis_stage == 1 and app.analysis_preview.fen == app.review_analysis.beforeFen, "recommendation source highlight")
 	await create_timer(0.6).timeout

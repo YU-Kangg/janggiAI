@@ -3,6 +3,16 @@ import { rulePosition, initialFen, defaultSetup } from './rules.js';
 
 const fail = (message, status = 409) => Object.assign(new Error(message), { status });
 
+export function classifyMove(match, lossCp) {
+  if (match) return { key: 'best', label: '최선', experimental: true, basis: 'exact-match' };
+  if (!Number.isFinite(lossCp)) return { key: 'unclassified', label: '분류 제외', experimental: true, basis: 'unavailable' };
+  if (lossCp <= 15) return { key: 'excellent', label: '매우 좋음', experimental: true, basis: 'loss-cp' };
+  if (lossCp <= 40) return { key: 'good', label: '좋음', experimental: true, basis: 'loss-cp' };
+  if (lossCp <= 80) return { key: 'inaccuracy', label: '부정확', experimental: true, basis: 'loss-cp' };
+  if (lossCp <= 160) return { key: 'mistake', label: '실수', experimental: true, basis: 'loss-cp' };
+  return { key: 'blunder', label: '큰 실수', experimental: true, basis: 'loss-cp' };
+}
+
 function reviewEntry({ revision, ply, position, result, afterPosition, afterResult, playedMove }) {
   const beforeEvaluation = result.analysis?.evaluation;
   const afterEvaluation = afterResult?.analysis?.evaluation;
@@ -18,9 +28,10 @@ function reviewEntry({ revision, ply, position, result, afterPosition, afterResu
     lossCp = Math.max(0, rawLossCp);
   }
   const recommendedPosition = rulePosition([...position.moves, result.move], position.initialFen);
+  const match = playedMove === result.move;
   return {
     revision, ply, side: position.turn, playedMove,
-    recommendedMove: result.move, match: playedMove === result.move,
+    recommendedMove: result.move, match, classification: classifyMove(match, lossCp),
     beforeFen: position.fen, recommendedFen: recommendedPosition.fen,
     budgetMs: result.budgetMs, source: result.source,
     analysis: {

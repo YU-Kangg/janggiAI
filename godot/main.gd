@@ -364,8 +364,10 @@ func format_evaluation(value: Variant) -> String:
 
 func format_review_analysis(payload: Dictionary) -> String:
 	var analysis: Dictionary = payload.analysis
-	var result := "%d수 서버 추천 재생 · 전 %s / 실제 수 후 %s" % [
-		int(payload.ply), format_evaluation(analysis.get("before")), format_evaluation(analysis.get("after")),
+	var classification: Dictionary = payload.get("classification", {})
+	var result := "%d수 · 실험 등급 %s · 서버 추천 재생 · 전 %s / 실제 수 후 %s" % [
+		int(payload.ply), str(classification.get("label", "분류 제외")),
+		format_evaluation(analysis.get("before")), format_evaluation(analysis.get("after")),
 	]
 	if analysis.get("lossCp") != null:
 		return result + " · 손실 %dcp" % int(analysis.lossCp)
