@@ -6,27 +6,68 @@ import { createServer } from '../server/index.js';
 
 const act = (game, action, data = {}) => game.act(action, { revision: game.revision, ...data });
 
-test('선택한 실제 수와 당시 서버 추천을 비교하고 대국은 변경하지 않음', async () => {
+test('선택한 실제 수의 착수 전후 평가 손실을 계산하고 대국을 변경하지 않음', async () => {
   const calls = [];
+  const results = [
+    { move: 'a4b4', cho: 20 }, { move: 'a7b7', cho: 10 },
+    { move: 'a7b7', cho: 10 }, { move: 'i4h4', cho: 15 },
+  ];
   const game = new Game({ recommendMove: async (moves, fen) => {
     calls.push({ moves: [...moves], fen });
-    return { move: moves.length === 0 ? 'a4b4' : 'a7b7', budgetMs: 300, source: 'test-engine' };
+    const result = results[calls.length - 1];
+    return { move: result.move, budgetMs: 300, source: 'test-engine', analysis: { evaluation: { unit: 'cp', cho: result.cho } } };
   } });
   await act(game, 'move', { move: 'a4b4' });
   await act(game, 'move', { move: 'a7b7' });
   const before = game.snapshot();
   const first = await act(game, 'review-analysis', { ply: 1 });
   const second = await act(game, 'review-analysis', { ply: 2 });
-  assert.deepEqual(first, {
-    revision: 2, ply: 1, side: 'cho', playedMove: 'a4b4', recommendedMove: 'a4b4',
-    match: true, budgetMs: 300, source: 'test-engine', analysis: null,
-  });
+
+  assert.equal(first.side, 'cho');
+  assert.equal(first.playedMove, 'a4b4');
+  assert.equal(first.recommendedMove, 'a4b4');
+  assert.equal(first.match, true);
+  assert.equal(first.analysis.rawLossCp, 10);
+  assert.equal(first.analysis.lossCp, 10);
+  assert.equal(first.analysis.lossReason, null);
+  assert.equal(first.analysis.before.evaluation.cho, 20);
+  assert.equal(first.analysis.after.evaluation.cho, 10);
   assert.equal(second.side, 'han');
   assert.equal(second.playedMove, 'a7b7');
   assert.equal(second.recommendedMove, 'a7b7');
-  assert.deepEqual(calls.map(call => call.moves), [[], ['a4b4']]);
+  assert.equal(second.analysis.rawLossCp, 5);
+  assert.equal(second.analysis.lossCp, 5);
+  assert.deepEqual(calls.map(call => call.moves), [[], ['a4b4'], ['a4b4'], ['a4b4', 'a7b7']]);
   assert.equal(calls[0].fen, before.initialFen);
   assert.deepEqual(game.snapshot(), before);
+});
+
+test('짧은 탐색 오차로 착수 후 평가가 좋아지면 손실은 0으로 보정하고 원값은 보존', async () => {
+  const game = new Game({ recommendMove: async moves => ({
+    move: moves.length ? 'a7b7' : 'a4b4', budgetMs: 300, source: 'test-engine',
+    analysis: { evaluation: { unit: 'cp', cho: moves.length ? 25 : 20 } },
+  }) });
+  await act(game, 'move', { move: 'a4b4' });
+  const result = await act(game, 'review-analysis', { ply: 1 });
+  assert.equal(result.analysis.rawLossCp, -5);
+  assert.equal(result.analysis.lossCp, 0);
+  assert.equal(result.analysis.lossReason, null);
+});
+
+test('대국을 끝낸 수는 착수 후 엔진을 호출하지 않고 평가 손실 사유를 반환', async () => {
+  const calls = [];
+  const game = new Game({ recommendMove: async moves => {
+    calls.push([...moves]);
+    return { move: 'e9e9', budgetMs: 300, source: 'test-engine', analysis: { evaluation: { unit: 'cp', cho: 0 } } };
+  } });
+  await act(game, 'move', { move: 'e2e2' });
+  await act(game, 'move', { move: 'e9e9' });
+  const result = await act(game, 'review-analysis', { ply: 2 });
+  assert.deepEqual(calls, [['e2e2']]);
+  assert.equal(result.analysis.after, null);
+  assert.equal(result.analysis.lossCp, null);
+  assert.equal(result.analysis.lossReason, 'terminal');
+  assert.equal(result.analysis.terminalOutcome.over, true);
 });
 
 test('복기 분석은 범위·revision·추천 합법성을 검증', async t => {
@@ -34,7 +75,7 @@ test('복기 분석은 범위·revision·추천 합법성을 검증', async t =>
   await act(game, 'move', { move: 'a4b4' });
   for (const ply of [-1, 0, 2, 0.5, '1']) await assert.rejects(act(game, 'review-analysis', { ply }), /수 번호/);
   await assert.rejects(game.act('review-analysis', { revision: 0, ply: 1 }), /변경/);
-  await assert.rejects(act(game, 'review-analysis', { ply: 1 }), /합법 수/);
+  await assert.rejects(act(game, 'review-analysis', { ply: 1 }), /합법 수가 아닌/);
 
   const server = createServer({ game });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');

@@ -39,10 +39,14 @@ test('실제 janggi 엔진: 합법 수, 한수쉼, 추천, 되돌리기, 요청 
   assert.equal(reviewAnalysis.data.playedMove, 'a4b4');
   assert.ok(initial.data.legalMoves.includes(reviewAnalysis.data.recommendedMove));
   assert.equal(reviewAnalysis.data.match, reviewAnalysis.data.recommendedMove === 'a4b4');
-  assert.equal(reviewAnalysis.data.analysis.evaluation.unit, 'cp');
-  assert.ok(Number.isInteger(reviewAnalysis.data.analysis.evaluation.cho));
-  assert.ok(reviewAnalysis.data.analysis.depth > 0);
-  assert.equal(reviewAnalysis.data.analysis.pv[0], reviewAnalysis.data.recommendedMove);
+  assert.equal(reviewAnalysis.data.analysis.before.evaluation.unit, 'cp');
+  assert.ok(Number.isInteger(reviewAnalysis.data.analysis.before.evaluation.cho));
+  assert.ok(reviewAnalysis.data.analysis.before.depth > 0);
+  assert.equal(reviewAnalysis.data.analysis.before.pv[0], reviewAnalysis.data.recommendedMove);
+  assert.equal(reviewAnalysis.data.analysis.after.evaluation.unit, 'cp');
+  assert.ok(Number.isInteger(reviewAnalysis.data.analysis.rawLossCp));
+  assert.ok(reviewAnalysis.data.analysis.lossCp >= 0);
+  assert.equal(reviewAnalysis.data.analysis.lossReason, null);
   assert.deepEqual((await call('game')).data.moves, ['a4b4'], '복기 분석만으로 착수되지 않음');
   const passed = await call('move', { revision: 1, move: 'e9e9' });
   assert.equal(passed.status, 200);

@@ -112,10 +112,37 @@ export class Game {
       if (this.revision !== revision) throw fail('분석 중 대국 상태가 변경되었습니다. 다시 시도하세요.');
       if (!position.legalMoves.includes(result.move)) throw new Error('합법 수가 아닌 복기 추천을 받았습니다.');
       const playedMove = this.moves[moveIndex];
+      const afterMoves = [...moves, playedMove];
+      const afterPosition = rulePosition(afterMoves, initialFen(this.setup));
+      let afterResult = null;
+      if (!afterPosition.outcome.over) {
+        afterResult = await this.recommendMove(afterMoves, initialFen(this.setup));
+        if (this.revision !== revision) throw fail('분석 중 대국 상태가 변경되었습니다. 다시 시도하세요.');
+        if (!afterPosition.legalMoves.includes(afterResult.move)) throw new Error('엔진이 둘 수 없는 착수 후 추천 수를 반환했습니다.');
+      }
+      const beforeEvaluation = result.analysis?.evaluation;
+      const afterEvaluation = afterResult?.analysis?.evaluation;
+      let rawLossCp = null;
+      let lossCp = null;
+      let lossReason = null;
+      if (afterPosition.outcome.over) lossReason = 'terminal';
+      else if (!beforeEvaluation || !afterEvaluation) lossReason = 'analysis-unavailable';
+      else if (beforeEvaluation.unit !== 'cp' || afterEvaluation.unit !== 'cp') lossReason = 'mate-score';
+      else {
+        const moverSign = position.turn === 'cho' ? 1 : -1;
+        rawLossCp = moverSign * (beforeEvaluation.cho - afterEvaluation.cho);
+        lossCp = Math.max(0, rawLossCp);
+      }
       return {
         revision, ply: data.ply, side: position.turn, playedMove,
         recommendedMove: result.move, match: playedMove === result.move,
-        budgetMs: result.budgetMs, source: result.source, analysis: result.analysis ?? null,
+        budgetMs: result.budgetMs, source: result.source,
+        analysis: {
+          before: result.analysis ?? null,
+          after: afterResult?.analysis ?? null,
+          rawLossCp, lossCp, lossReason,
+          terminalOutcome: afterPosition.outcome.over ? afterPosition.outcome : null,
+        },
       };
     }
     if (action === 'cancel-ai') {
