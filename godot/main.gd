@@ -44,6 +44,8 @@ var retry_button := Button.new()
 var retry_mode := false
 var retry_review_ply := -1
 var retry_expected_move := ""
+var retry_hint_button := Button.new()
+var retry_hint_stage := 0
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -146,6 +148,10 @@ func _ready() -> void:
 	retry_button.custom_minimum_size.y = 44
 	retry_button.pressed.connect(start_retry)
 	navigation.add_child(retry_button)
+	retry_hint_button.text = "힌트"
+	retry_hint_button.custom_minimum_size.y = 44
+	retry_hint_button.pressed.connect(show_retry_hint)
+	navigation.add_child(retry_hint_button)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
 	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
@@ -335,6 +341,7 @@ func start_variation() -> void:
 	retry_mode = false
 	retry_review_ply = -1
 	retry_expected_move = ""
+	retry_hint_stage = 0
 	start_variation_at(view_ply())
 
 func start_variation_at(base_ply: int) -> void:
@@ -353,7 +360,15 @@ func start_retry() -> void:
 	retry_mode = true
 	retry_review_ply = view_ply()
 	retry_expected_move = str(cached.recommendedMove)
+	retry_hint_stage = 0
 	start_variation_at(retry_review_ply - 1)
+
+func show_retry_hint() -> void:
+	if pending or not retry_mode or variation.is_empty() or not variation_moves.is_empty() or retry_hint_stage >= 2:
+		return
+	retry_hint_stage += 1
+	message.text = "힌트 · 움직일 기물을 표시했습니다." if retry_hint_stage == 1 else "힌트 · 도착 칸까지 표시했습니다."
+	render_board()
 
 func play_variation_move(move: String) -> void:
 	if pending or variation.is_empty() or not variation.legalMoves.has(move):
@@ -377,6 +392,7 @@ func resume_review() -> void:
 	retry_mode = false
 	retry_review_ply = -1
 	retry_expected_move = ""
+	retry_hint_stage = 0
 	selected = ""
 	message.text = "복기를 재개했습니다."
 	render_board()
@@ -636,6 +652,11 @@ func render_position(state: Dictionary) -> void:
 				button.modulate = Color(1, 0.78, 0.2)
 			elif review_recommendation.size() == 2 and analysis_stage == 2 and square == review_recommendation[1]:
 				button.modulate = Color(0.35, 1, 0.55)
+			var retry_hint := split_move(retry_expected_move)
+			if retry_mode and retry_hint.size() == 2 and retry_hint_stage >= 1 and square == retry_hint[0]:
+				button.modulate = Color(1, 0.78, 0.2)
+			elif retry_mode and retry_hint.size() == 2 and retry_hint_stage >= 2 and square == retry_hint[1]:
+				button.modulate = Color(0.35, 1, 0.55)
 			button.disabled = (not review.is_empty() and variation.is_empty()) or (pending and current_path != "game") or ai_turn or state.outcome.over
 			button.pressed.connect(choose.bind(square, piece))
 			grid.add_child(button)
@@ -693,3 +714,4 @@ func render_position(state: Dictionary) -> void:
 	variation_resume.disabled = pending or variation.is_empty()
 	next_key_move_button.disabled = pending or review.is_empty() or not variation.is_empty() or next_key_ply(view_ply()) < 0
 	retry_button.disabled = pending or review.is_empty() or not variation.is_empty() or view_ply() < 1 or cached_review_result(view_ply()).is_empty()
+	retry_hint_button.disabled = pending or not retry_mode or variation.is_empty() or not variation_moves.is_empty() or retry_hint_stage >= 2
