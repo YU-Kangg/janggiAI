@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyMove } from '../server/game.js';
+import { classifyMove, summarizeReview } from '../server/game.js';
 
 test('실험적 수 등급은 최선 수 일치와 cp 손실 경계를 적용', () => {
   assert.deepEqual(classifyMove(true, 999), {
@@ -24,4 +24,21 @@ test('cp로 비교할 수 없는 종료·mate·평가 누락은 등급에서 제
       key: 'unclassified', label: '분류 제외', experimental: true, basis: 'unavailable',
     });
   }
+});
+
+test('전체 리뷰 요약은 등급 수와 핵심 수 및 평균 손실을 집계', () => {
+  const results = [
+    { classification: { key: 'best' }, analysis: { lossCp: 0 } },
+    { classification: { key: 'inaccuracy' }, analysis: { lossCp: 50 } },
+    { classification: { key: 'blunder' }, analysis: { lossCp: 200 } },
+    { classification: { key: 'unclassified' }, analysis: { lossCp: null } },
+  ];
+  const summary = summarizeReview(results);
+  assert.equal(summary.total, 4);
+  assert.equal(summary.counts.best, 1);
+  assert.equal(summary.counts.inaccuracy, 1);
+  assert.equal(summary.counts.blunder, 1);
+  assert.equal(summary.counts.unclassified, 1);
+  assert.equal(summary.keyMoves, 2);
+  assert.equal(summary.averageLossCp, 83);
 });

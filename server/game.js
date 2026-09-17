@@ -13,6 +13,25 @@ export function classifyMove(match, lossCp) {
   return { key: 'blunder', label: '큰 실수', experimental: true, basis: 'loss-cp' };
 }
 
+export function summarizeReview(results) {
+  const counts = { best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0, unclassified: 0 };
+  let lossTotal = 0;
+  let lossCount = 0;
+  for (const item of results) {
+    const key = item.classification?.key ?? 'unclassified';
+    counts[key] = (counts[key] ?? 0) + 1;
+    if (Number.isFinite(item.analysis?.lossCp)) {
+      lossTotal += item.analysis.lossCp;
+      lossCount++;
+    }
+  }
+  return {
+    total: results.length, counts,
+    keyMoves: counts.inaccuracy + counts.mistake + counts.blunder,
+    averageLossCp: lossCount ? Math.round(lossTotal / lossCount) : null,
+  };
+}
+
 function reviewEntry({ revision, ply, position, result, afterPosition, afterResult, playedMove }) {
   const beforeEvaluation = result.analysis?.evaluation;
   const afterEvaluation = afterResult?.analysis?.evaluation;
@@ -147,7 +166,8 @@ export class Game {
     if (!job) return null;
     return {
       jobId: job.id, revision: job.revision, status: job.status,
-      completed: job.completed, total: job.total, results: [...job.results], error: job.error,
+      completed: job.completed, total: job.total, results: [...job.results],
+      summary: summarizeReview(job.results), error: job.error,
     };
   }
 

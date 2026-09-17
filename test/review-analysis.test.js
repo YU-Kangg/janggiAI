@@ -127,6 +127,9 @@ test('전체 기보 리뷰는 위치 평가를 재사용하며 백그라운드 �
   assert.equal(complete.status, 'complete');
   assert.equal(complete.completed, 2);
   assert.equal(complete.results.length, 2);
+  assert.equal(complete.summary.total, 2);
+  assert.equal(Object.values(complete.summary.counts).reduce((sum, count) => sum + count, 0), 2);
+  assert.equal(complete.summary.averageLossCp, 8);
   assert.deepEqual(complete.results.map(item => item.analysis.lossCp), [10, 5]);
   assert.deepEqual(calls, [[], ['a4b4'], ['a4b4', 'a7b7']]);
   assert.deepEqual(game.snapshot(), before);

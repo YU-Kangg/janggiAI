@@ -11,6 +11,7 @@ var endpoint := LineEdit.new()
 var status := Label.new()
 var message := Label.new()
 var score_panel := Label.new()
+var review_summary := Label.new()
 var grid := GridContainer.new()
 var side := OptionButton.new()
 var action_buttons: Array[Button] = []
@@ -83,6 +84,8 @@ func _ready() -> void:
 	column.add_child(score_panel)
 	evaluation_graph.ply_selected.connect(show_review)
 	column.add_child(evaluation_graph)
+	review_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(review_summary)
 	side.add_item("초로 AI 대국")
 	side.add_item("한으로 AI 대국")
 	column.add_child(side)
@@ -265,6 +268,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 			elif payload.status == "complete":
 				message.text = "전체 리뷰 완료 · %d수" % int(payload.total)
 				evaluation_graph.set_results(payload.results)
+				review_summary.text = format_review_summary(payload.get("summary", {}))
 			elif payload.status == "cancelled":
 				message.text = "전체 리뷰를 취소했습니다."
 			else:
@@ -296,6 +300,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		if not full_review.is_empty() and full_review.get("revision") != payload.revision:
 			full_review = {}
 			evaluation_graph.set_results([])
+			review_summary.text = ""
 		selected = ""
 	if current_path != "game" or changed:
 		message.text = ""
@@ -450,6 +455,18 @@ func cached_review_result(ply: int) -> Dictionary:
 		if int(item.get("ply", -1)) == ply:
 			return item
 	return {}
+
+func format_review_summary(summary: Dictionary) -> String:
+	if summary.is_empty() or int(summary.get("total", 0)) == 0:
+		return ""
+	var counts: Dictionary = summary.get("counts", {})
+	var text := "리뷰 요약 · 최선 %d · 매우 좋음 %d · 좋음 %d · 부정확 %d · 실수 %d · 큰 실수 %d" % [
+		int(counts.get("best", 0)), int(counts.get("excellent", 0)), int(counts.get("good", 0)),
+		int(counts.get("inaccuracy", 0)), int(counts.get("mistake", 0)), int(counts.get("blunder", 0)),
+	]
+	if summary.get("averageLossCp") != null:
+		text += " · 평균 손실 %dcp" % int(summary.averageLossCp)
+	return text
 
 func next_key_ply(after_ply: int) -> int:
 	if full_review.get("status", "") != "complete":
