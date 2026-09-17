@@ -1,6 +1,7 @@
 extends Control
 
 const LocalEngine = preload("res://local_engine.gd")
+const EvaluationGraph = preload("res://evaluation_graph.gd")
 
 var state: Dictionary = {}
 var selected := ""
@@ -37,6 +38,7 @@ var variation_evaluation_target := ""
 var full_review: Dictionary = {}
 var full_review_start := Button.new()
 var full_review_cancel := Button.new()
+var evaluation_graph = EvaluationGraph.new()
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -69,6 +71,8 @@ func _ready() -> void:
 	column.add_child(status)
 	score_panel.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(score_panel)
+	evaluation_graph.ply_selected.connect(show_review)
+	column.add_child(evaluation_graph)
 	side.add_item("초로 AI 대국")
 	side.add_item("한으로 AI 대국")
 	column.add_child(side)
@@ -229,6 +233,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 				message.text = "전체 리뷰 분석 중 · %d/%d수" % [int(payload.completed), int(payload.total)]
 			elif payload.status == "complete":
 				message.text = "전체 리뷰 완료 · %d수" % int(payload.total)
+				evaluation_graph.set_results(payload.results)
 			elif payload.status == "cancelled":
 				message.text = "전체 리뷰를 취소했습니다."
 			else:
@@ -259,6 +264,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		clear_variation()
 		if not full_review.is_empty() and full_review.get("revision") != payload.revision:
 			full_review = {}
+			evaluation_graph.set_results([])
 		selected = ""
 	if current_path != "game" or changed:
 		message.text = ""
@@ -619,6 +625,7 @@ func render_position(state: Dictionary) -> void:
 		var description: String = "한수쉼" if pair[0] == pair[1] else "%s → %s" % [pair[0], pair[1]]
 		history.add_item("%d수 · %s %s" % [index + 1, "초" if index % 2 == 0 else "한", description])
 	history.select(view_ply())
+	evaluation_graph.select_ply(view_ply())
 	review_buttons[0].disabled = pending or self.state.moves.is_empty()
 	review_buttons[1].disabled = pending or view_ply() == 0
 	review_buttons[2].disabled = pending or review.is_empty() or view_ply() >= self.state.moves.size()
