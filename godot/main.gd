@@ -721,11 +721,14 @@ func format_evaluation(value: Variant) -> String:
 
 func format_review_analysis(payload: Dictionary) -> String:
 	var analysis: Dictionary = payload.analysis
+	var before: Dictionary = analysis.get("before", {}) if analysis.get("before") is Dictionary else {}
 	var classification: Dictionary = payload.get("classification", {})
 	var result := "%d수 · 실험 등급 %s · 서버 추천 · 전 %s / 실제 수 후 %s" % [
 		int(payload.ply), str(classification.get("label", "분류 제외")),
 		format_evaluation(analysis.get("before")), format_evaluation(analysis.get("after")),
 	]
+	if not before.is_empty():
+		result += " · 깊이 %d · %d노드 · %dms" % [int(before.get("depth", 0)), int(before.get("nodes", 0)), int(before.get("timeMs", 0))]
 	if analysis.get("lossCp") != null:
 		return result + " · 손실 %dcp" % int(analysis.lossCp)
 	var reasons := {"terminal": "대국 종료", "mate-score": "강제승패 평가", "analysis-unavailable": "평가 없음"}
