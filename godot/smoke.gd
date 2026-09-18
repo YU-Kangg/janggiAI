@@ -49,6 +49,11 @@ func run() -> void:
 		app.request_state()
 		await wait_idle()
 	check(app.full_review.status == "complete" and app.full_review.results.size() == 2, "full review progress and completion")
+	app.review_export_path = "user://janggi-review-smoke.json"
+	app.export_full_review()
+	var exported_review = JSON.parse_string(FileAccess.get_file_as_string(app.review_export_path))
+	check(exported_review is Dictionary and exported_review.schemaVersion == 1 and exported_review.game.moves.size() == 2 and exported_review.review.results.size() == 2, "review JSON export")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(app.review_export_path))
 	check(app.review_summary.text.contains("리뷰 요약") and app.review_summary.text.contains("최선") and app.review_summary.text.contains("초 1수") and app.review_summary.text.contains("한 1수"), "classification and side summary display")
 	check(app.history.get_item_text(1).contains("[최선]"), "history move classification label")
 	var completed_review_job: int = app.full_review.jobId

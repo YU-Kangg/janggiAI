@@ -41,6 +41,8 @@ var full_review: Dictionary = {}
 var review_restore_revision := -1
 var full_review_start := Button.new()
 var full_review_cancel := Button.new()
+var review_export_button := Button.new()
+var review_export_path := "user://janggi-review.json"
 var evaluation_graph = EvaluationGraph.new()
 var previous_key_move_button := Button.new()
 var next_key_move_button := Button.new()
@@ -137,6 +139,10 @@ func _ready() -> void:
 	full_review_cancel.custom_minimum_size.y = 44
 	full_review_cancel.pressed.connect(cancel_full_review)
 	actions.add_child(full_review_cancel)
+	review_export_button.text = "리뷰 JSON 저장"
+	review_export_button.custom_minimum_size.y = 44
+	review_export_button.pressed.connect(export_full_review)
+	actions.add_child(review_export_button)
 	device_engine.completed.connect(on_device_recommendation)
 	column.add_child(history)
 	history.item_selected.connect(func(index: int): show_review(index))
@@ -390,6 +396,29 @@ func cancel_full_review() -> void:
 	if pending or full_review.get("status", "") != "running":
 		return
 	send("review-cancel", {"revision": state.revision, "jobId": full_review.jobId})
+
+func export_full_review() -> void:
+	if full_review.get("status", "") != "complete" or state.is_empty():
+		return
+	var payload := {
+		"schemaVersion": 1,
+		"variant": "janggi",
+		"game": {
+			"revision": state.revision,
+			"initialFen": state.initialFen,
+			"setup": state.setup,
+			"moves": state.moves,
+		},
+		"review": full_review,
+	}
+	var file := FileAccess.open(review_export_path, FileAccess.WRITE)
+	if file == null:
+		message.text = "리뷰 JSON 저장에 실패했습니다."
+		return
+	file.store_string(JSON.stringify(payload, "  "))
+	file.close()
+	message.text = "리뷰 JSON 저장 완료 · %s" % review_export_path
+	render_board()
 
 func view_ply() -> int:
 	return review.moves.size() if not review.is_empty() else state.get("moves", []).size()
@@ -948,6 +977,7 @@ func render_position(state: Dictionary) -> void:
 	device_cancel.disabled = not variation.is_empty() or not device_engine.busy()
 	full_review_start.disabled = pending or self.state.moves.is_empty() or full_review.get("status", "") == "running"
 	full_review_cancel.disabled = pending or full_review.get("status", "") != "running"
+	review_export_button.disabled = pending or full_review.get("status", "") != "complete"
 	if not review.is_empty():
 		status.text = "복기 %d/%d수 · %s" % [view_ply(), self.state.moves.size(), status.text]
 	if not analysis_preview.is_empty():
