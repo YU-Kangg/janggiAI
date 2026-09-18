@@ -104,12 +104,14 @@ func run() -> void:
 	var stopped_prediction_index: int = app.prediction_index
 	await create_timer(0.6).timeout
 	check(not app.prediction_playing and app.prediction_index == stopped_prediction_index and app.message.text.contains("수순 정지"), "prediction manual stop")
+	app.playback_speed.select(2)
+	check(app.playback_delay() == 0.25, "shared fast playback speed")
 	app.step_prediction(1)
 	check(app.prediction_index == 1 and app.analysis_preview.fen == app.review_analysis.prediction.fens[1], "prediction manual next")
 	app.step_prediction(-1)
 	check(app.prediction_index == 0 and app.analysis_preview.fen == app.review_analysis.prediction.fens[0], "prediction manual previous")
 	app.play_prediction()
-	await create_timer(0.65).timeout
+	await create_timer(0.35).timeout
 	check(app.prediction_index >= 1 and app.message.text.contains("예상 수순"), "prediction auto playback")
 	var retry_move: String = app.review_analysis.recommendedMove
 	app.start_retry()

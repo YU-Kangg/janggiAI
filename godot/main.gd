@@ -60,6 +60,7 @@ var game_review_play_button := Button.new()
 var game_review_stop_button := Button.new()
 var game_review_generation := 0
 var game_review_playing := false
+var playback_speed := OptionButton.new()
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -204,6 +205,11 @@ func _ready() -> void:
 	game_review_stop_button.custom_minimum_size.y = 44
 	game_review_stop_button.pressed.connect(stop_game_review)
 	navigation.add_child(game_review_stop_button)
+	playback_speed.add_item("재생 느리게")
+	playback_speed.add_item("재생 보통")
+	playback_speed.add_item("재생 빠르게")
+	playback_speed.select(1)
+	navigation.add_child(playback_speed)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
 	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
@@ -592,7 +598,7 @@ func play_prediction() -> void:
 		message.text = "엔진 예상 수순 재생 · %d/%d" % [index, fens.size() - 1]
 		render_board()
 		if index < fens.size() - 1:
-			await get_tree().create_timer(0.55).timeout
+			await get_tree().create_timer(playback_delay()).timeout
 	if generation == prediction_generation:
 		prediction_playing = false
 		render_board()
@@ -646,7 +652,7 @@ func play_game_review() -> void:
 		message.text = "기보 재생 · %d/%d수" % [ply, state.moves.size()]
 		render_board()
 		if ply < state.moves.size():
-			await get_tree().create_timer(0.55).timeout
+			await get_tree().create_timer(playback_delay()).timeout
 	if generation == game_review_generation:
 		game_review_playing = false
 		render_board()
@@ -658,6 +664,15 @@ func stop_game_review() -> void:
 	game_review_playing = false
 	message.text = "기보 재생 정지 · %d/%d수" % [view_ply(), state.moves.size()]
 	render_board()
+
+func playback_delay() -> float:
+	match playback_speed.selected:
+		0:
+			return 1.0
+		2:
+			return 0.25
+		_:
+			return 0.55
 
 func play_review_analysis(payload: Dictionary) -> void:
 	analysis_generation += 1
