@@ -51,6 +51,12 @@ func run() -> void:
 	check(app.full_review.status == "complete" and app.full_review.results.size() == 2, "full review progress and completion")
 	check(app.review_summary.text.contains("리뷰 요약") and app.review_summary.text.contains("최선"), "classification summary display")
 	check(app.history.get_item_text(1).contains("[최선]"), "history move classification label")
+	var completed_review_job: int = app.full_review.jobId
+	app.full_review = {}
+	app.review_restore_revision = -1
+	app.request_state()
+	await wait_idle()
+	check(app.full_review.get("status") == "complete" and app.full_review.get("jobId") == completed_review_job, "completed review restored after reconnect")
 	check(app.evaluation_graph.values.size() == 3, "evaluation graph has initial and per-move points")
 	app.evaluation_graph.ply_selected.emit(1)
 	await wait_idle()

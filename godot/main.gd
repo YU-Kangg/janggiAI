@@ -38,6 +38,7 @@ var variation_resume := Button.new()
 var variation_evaluation: Dictionary = {}
 var variation_evaluation_target := ""
 var full_review: Dictionary = {}
+var review_restore_revision := -1
 var full_review_start := Button.new()
 var full_review_cancel := Button.new()
 var evaluation_graph = EvaluationGraph.new()
@@ -306,7 +307,10 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 			schedule_variation_evaluation()
 		render_board()
 		return
-	if current_path in ["review-start", "review-status", "review-cancel"]:
+	if current_path in ["review-start", "review-status", "review-latest", "review-cancel"]:
+		if current_path == "review-latest" and payload.get("status", "") == "none":
+			render_board()
+			return
 		if not payload.has("jobId") or not payload.has("status") or not payload.has("completed") or not payload.has("total"):
 			message.text = "전체 리뷰 응답 형식이 올바르지 않습니다."
 		else:
@@ -354,6 +358,9 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		message.text = ""
 	if changed or current_path != "game":
 		render_board()
+	if review_restore_revision != int(state.revision):
+		review_restore_revision = int(state.revision)
+		send("review-latest", {"revision": state.revision})
 
 func act(action: String, data: Dictionary = {}) -> void:
 	if state.is_empty() or pending or not review.is_empty():

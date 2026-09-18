@@ -270,6 +270,13 @@ export class Game {
       if (!this.fullReviewJob || (data.jobId != null && data.jobId !== this.fullReviewJob.id)) throw fail('전체 리뷰 작업을 찾을 수 없습니다.', 404);
       return this.fullReviewSnapshot();
     }
+    if (action === 'review-latest') {
+      if (!this.fullReviewJob || this.fullReviewJob.revision !== this.revision
+        || !['running', 'complete'].includes(this.fullReviewJob.status)) {
+        return { revision: this.revision, status: 'none' };
+      }
+      return this.fullReviewSnapshot();
+    }
     if (action === 'review-cancel') {
       if (!this.fullReviewJob || this.fullReviewJob.status !== 'running') throw fail('진행 중인 전체 리뷰가 없습니다.');
       this.fullReviewJob.controller.abort();

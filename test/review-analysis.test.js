@@ -138,6 +138,17 @@ test('전체 기보 리뷰는 위치 평가를 재사용하며 백그라운드 �
   assert.equal(cached.status, 'complete');
   assert.equal(cached.jobId, started.jobId);
   assert.deepEqual(calls, [[], ['a4b4'], ['a4b4', 'a7b7']]);
+
+  const restored = await act(game, 'review-latest');
+  assert.equal(restored.status, 'complete');
+  assert.equal(restored.jobId, started.jobId);
+  assert.deepEqual(restored.results, complete.results);
+});
+
+test('현재 대국에 복원할 전체 리뷰가 없으면 none을 반환', async () => {
+  const game = new Game();
+  const latest = await act(game, 'review-latest');
+  assert.deepEqual(latest, { revision: game.revision, status: 'none' });
 });
 
 test('전체 기보 리뷰는 취소할 수 있음', async () => {
