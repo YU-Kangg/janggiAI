@@ -53,6 +53,16 @@ func run() -> void:
 	app.export_full_review()
 	var exported_review = JSON.parse_string(FileAccess.get_file_as_string(app.review_export_path))
 	check(exported_review is Dictionary and exported_review.schemaVersion == 1 and exported_review.game.moves.size() == 2 and exported_review.review.results.size() == 2, "review JSON export")
+	check(app.valid_imported_review(exported_review), "matching review JSON validation")
+	var wrong_review = exported_review.duplicate(true)
+	wrong_review.game.revision = -1
+	check(not app.valid_imported_review(wrong_review), "mismatched review JSON rejection")
+	var exported_job: int = app.full_review.jobId
+	app.full_review = {}
+	app.evaluation_graph.set_results([])
+	app.review_summary.text = ""
+	app.import_full_review()
+	check(app.full_review.jobId == exported_job and app.evaluation_graph.values.size() == 3 and app.review_summary.text.contains("리뷰 요약"), "review JSON import")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(app.review_export_path))
 	check(app.review_summary.text.contains("리뷰 요약") and app.review_summary.text.contains("최선") and app.review_summary.text.contains("초 1수") and app.review_summary.text.contains("한 1수"), "classification and side summary display")
 	check(app.history.get_item_text(1).contains("[최선]"), "history move classification label")

@@ -42,6 +42,7 @@ var review_restore_revision := -1
 var full_review_start := Button.new()
 var full_review_cancel := Button.new()
 var review_export_button := Button.new()
+var review_import_button := Button.new()
 var review_export_path := "user://janggi-review.json"
 var evaluation_graph = EvaluationGraph.new()
 var previous_key_move_button := Button.new()
@@ -143,6 +144,10 @@ func _ready() -> void:
 	review_export_button.custom_minimum_size.y = 44
 	review_export_button.pressed.connect(export_full_review)
 	actions.add_child(review_export_button)
+	review_import_button.text = "리뷰 JSON 불러오기"
+	review_import_button.custom_minimum_size.y = 44
+	review_import_button.pressed.connect(import_full_review)
+	actions.add_child(review_import_button)
 	device_engine.completed.connect(on_device_recommendation)
 	column.add_child(history)
 	history.item_selected.connect(func(index: int): show_review(index))
@@ -418,6 +423,35 @@ func export_full_review() -> void:
 	file.store_string(JSON.stringify(payload, "  "))
 	file.close()
 	message.text = "리뷰 JSON 저장 완료 · %s" % review_export_path
+	render_board()
+
+func valid_imported_review(payload: Variant) -> bool:
+	if not payload is Dictionary or int(payload.get("schemaVersion", 0)) != 1 or payload.get("variant", "") != "janggi":
+		return false
+	var game: Variant = payload.get("game")
+	var imported_review: Variant = payload.get("review")
+	if not game is Dictionary or not imported_review is Dictionary:
+		return false
+	if int(game.get("revision", -1)) != int(state.get("revision", -2)) or game.get("initialFen", "") != state.get("initialFen", ""):
+		return false
+	if game.get("moves", []) != state.get("moves", []) or imported_review.get("status", "") != "complete":
+		return false
+	if int(imported_review.get("revision", -1)) != int(state.revision) or not imported_review.get("results") is Array or not imported_review.get("summary") is Dictionary:
+		return false
+	return imported_review.results.size() == state.moves.size()
+
+func import_full_review() -> void:
+	if state.is_empty() or not FileAccess.file_exists(review_export_path):
+		return
+	var payload = JSON.parse_string(FileAccess.get_file_as_string(review_export_path))
+	if not valid_imported_review(payload):
+		message.text = "현재 대국과 일치하는 리뷰 JSON이 아닙니다."
+		render_board()
+		return
+	full_review = payload.review.duplicate(true)
+	evaluation_graph.set_results(full_review.results)
+	review_summary.text = format_review_summary(full_review.summary)
+	message.text = "리뷰 JSON 불러오기 완료 · %d수" % int(full_review.total)
 	render_board()
 
 func view_ply() -> int:
@@ -978,6 +1012,7 @@ func render_position(state: Dictionary) -> void:
 	full_review_start.disabled = pending or self.state.moves.is_empty() or full_review.get("status", "") == "running"
 	full_review_cancel.disabled = pending or full_review.get("status", "") != "running"
 	review_export_button.disabled = pending or full_review.get("status", "") != "complete"
+	review_import_button.disabled = pending or state.is_empty() or not FileAccess.file_exists(review_export_path)
 	if not review.is_empty():
 		status.text = "복기 %d/%d수 · %s" % [view_ply(), self.state.moves.size(), status.text]
 	if not analysis_preview.is_empty():
