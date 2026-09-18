@@ -56,6 +56,9 @@ var prediction_next_button := Button.new()
 var prediction_index := -1
 var prediction_generation := 0
 var prediction_playing := false
+var game_review_play_button := Button.new()
+var game_review_generation := 0
+var game_review_playing := false
 var device_engine = LocalEngine.new()
 var device_recommend := Button.new()
 var device_cancel := Button.new()
@@ -192,6 +195,10 @@ func _ready() -> void:
 	prediction_next_button.custom_minimum_size.y = 44
 	prediction_next_button.pressed.connect(func(): step_prediction(1))
 	navigation.add_child(prediction_next_button)
+	game_review_play_button.text = "기보 재생"
+	game_review_play_button.custom_minimum_size.y = 44
+	game_review_play_button.pressed.connect(play_game_review)
+	navigation.add_child(game_review_play_button)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
 	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
@@ -358,9 +365,12 @@ func cancel_full_review() -> void:
 func view_ply() -> int:
 	return review.moves.size() if not review.is_empty() else state.get("moves", []).size()
 
-func show_review(ply: int) -> void:
+func show_review(ply: int, keep_game_playback := false) -> void:
 	if pending or state.is_empty() or not variation.is_empty() or ply < 0 or ply > state.moves.size():
 		return
+	if not keep_game_playback:
+		game_review_generation += 1
+		game_review_playing = false
 	cancel_device_recommendation(false)
 	clear_review_analysis()
 	selected = ""
@@ -613,6 +623,28 @@ func step_prediction(offset: int) -> void:
 	analysis_stage = 0
 	message.text = "엔진 예상 수순 · %d/%d" % [next_index, fens.size() - 1]
 	render_board()
+
+func play_game_review() -> void:
+	if pending or state.is_empty() or state.moves.is_empty() or not variation.is_empty():
+		return
+	game_review_generation += 1
+	var generation := game_review_generation
+	game_review_playing = true
+	for ply in range(state.moves.size() + 1):
+		if generation != game_review_generation or not variation.is_empty():
+			return
+		show_review(ply, true)
+		while pending:
+			await get_tree().process_frame
+		if generation != game_review_generation:
+			return
+		message.text = "기보 재생 · %d/%d수" % [ply, state.moves.size()]
+		render_board()
+		if ply < state.moves.size():
+			await get_tree().create_timer(0.55).timeout
+	if generation == game_review_generation:
+		game_review_playing = false
+		render_board()
 
 func play_review_analysis(payload: Dictionary) -> void:
 	analysis_generation += 1
@@ -874,3 +906,4 @@ func render_position(state: Dictionary) -> void:
 	var prediction_size: int = review_analysis.get("prediction", {}).get("fens", []).size()
 	prediction_previous_button.disabled = pending or review.is_empty() or not variation.is_empty() or prediction_size < 2 or prediction_index <= 0
 	prediction_next_button.disabled = pending or review.is_empty() or not variation.is_empty() or prediction_size < 2 or prediction_index >= prediction_size - 1
+	game_review_play_button.disabled = pending or state.moves.is_empty() or not variation.is_empty() or game_review_playing

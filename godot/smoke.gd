@@ -139,6 +139,12 @@ func run() -> void:
 	check(app.variation_moves.is_empty() and app.variation.turn == "han", "variation undo")
 	app.resume_review()
 	check(app.variation.is_empty() and app.review.moves.size() == 1, "resume original review point")
+	app.play_game_review()
+	for attempt in range(50):
+		if not app.game_review_playing:
+			break
+		await create_timer(0.1).timeout
+	check(not app.game_review_playing and app.review.moves.size() == 2 and app.message.text.contains("기보 재생"), "game review auto playback")
 	app.show_review(2)
 	await wait_idle()
 	check(app.review.fen == live_fen, "last review position")
