@@ -57,6 +57,7 @@ var prediction_index := -1
 var prediction_generation := 0
 var prediction_playing := false
 var game_review_play_button := Button.new()
+var game_review_stop_button := Button.new()
 var game_review_generation := 0
 var game_review_playing := false
 var device_engine = LocalEngine.new()
@@ -199,6 +200,10 @@ func _ready() -> void:
 	game_review_play_button.custom_minimum_size.y = 44
 	game_review_play_button.pressed.connect(play_game_review)
 	navigation.add_child(game_review_play_button)
+	game_review_stop_button.text = "기보 정지"
+	game_review_stop_button.custom_minimum_size.y = 44
+	game_review_stop_button.pressed.connect(stop_game_review)
+	navigation.add_child(game_review_stop_button)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
 	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
@@ -646,6 +651,14 @@ func play_game_review() -> void:
 		game_review_playing = false
 		render_board()
 
+func stop_game_review() -> void:
+	if not game_review_playing:
+		return
+	game_review_generation += 1
+	game_review_playing = false
+	message.text = "기보 재생 정지 · %d/%d수" % [view_ply(), state.moves.size()]
+	render_board()
+
 func play_review_analysis(payload: Dictionary) -> void:
 	analysis_generation += 1
 	var generation := analysis_generation
@@ -907,3 +920,4 @@ func render_position(state: Dictionary) -> void:
 	prediction_previous_button.disabled = pending or review.is_empty() or not variation.is_empty() or prediction_size < 2 or prediction_index <= 0
 	prediction_next_button.disabled = pending or review.is_empty() or not variation.is_empty() or prediction_size < 2 or prediction_index >= prediction_size - 1
 	game_review_play_button.disabled = pending or state.moves.is_empty() or not variation.is_empty() or game_review_playing
+	game_review_stop_button.disabled = not game_review_playing

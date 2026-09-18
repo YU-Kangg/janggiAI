@@ -145,6 +145,12 @@ func run() -> void:
 			break
 		await create_timer(0.1).timeout
 	check(not app.game_review_playing and app.review.moves.size() == 2 and app.message.text.contains("기보 재생"), "game review auto playback")
+	app.play_game_review()
+	await wait_idle()
+	app.stop_game_review()
+	var stopped_review_ply: int = app.view_ply()
+	await create_timer(0.7).timeout
+	check(not app.game_review_playing and app.view_ply() == stopped_review_ply and app.message.text.contains("재생 정지"), "game review manual stop")
 	app.show_review(2)
 	await wait_idle()
 	check(app.review.fen == live_fen, "last review position")
