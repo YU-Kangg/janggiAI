@@ -443,7 +443,35 @@ func valid_imported_review(payload: Variant) -> bool:
 		return false
 	if int(imported_review.get("revision", -1)) != int(state.revision) or not imported_review.get("results") is Array or not imported_review.get("summary") is Dictionary:
 		return false
-	return imported_review.results.size() == state.moves.size()
+	var results: Array = imported_review.results
+	if results.size() != state.moves.size() or int(imported_review.get("total", -1)) != state.moves.size():
+		return false
+	if int(imported_review.summary.get("total", -1)) != results.size():
+		return false
+	for index in range(results.size()):
+		if not valid_imported_review_entry(results[index], index):
+			return false
+	return true
+
+func valid_imported_review_entry(value: Variant, index: int) -> bool:
+	if not value is Dictionary:
+		return false
+	var item: Dictionary = value
+	if int(item.get("revision", -1)) != int(state.revision) or int(item.get("ply", -1)) != index + 1:
+		return false
+	if item.get("side", "") != ("cho" if index % 2 == 0 else "han") or item.get("playedMove", "") != state.moves[index]:
+		return false
+	if split_move(str(item.get("recommendedMove", ""))).size() != 2 or not item.get("classification") is Dictionary or not item.get("analysis") is Dictionary:
+		return false
+	var classification: Dictionary = item.classification
+	if not classification.get("key", "") in ["best", "excellent", "good", "inaccuracy", "mistake", "blunder", "unclassified"] or str(classification.get("label", "")) == "":
+		return false
+	if not item.get("prediction") is Dictionary or str(item.get("beforeFen", "")) == "" or str(item.get("recommendedFen", "")) == "":
+		return false
+	var prediction: Dictionary = item.prediction
+	if not prediction.get("moves") is Array or not prediction.get("fens") is Array:
+		return false
+	return prediction.fens.size() == prediction.moves.size() + 1
 
 func import_full_review(notify_user := true) -> bool:
 	if state.is_empty() or not FileAccess.file_exists(review_export_path):

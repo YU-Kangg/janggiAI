@@ -60,6 +60,12 @@ func run() -> void:
 	var wrong_review = exported_review.duplicate(true)
 	wrong_review.game.revision = -1
 	check(not app.valid_imported_review(wrong_review), "mismatched review JSON rejection")
+	var mixed_review = exported_review.duplicate(true)
+	mixed_review.review.results[1].ply = 1
+	check(not app.valid_imported_review(mixed_review), "mixed review entry rejection")
+	var broken_prediction = exported_review.duplicate(true)
+	broken_prediction.review.results[0].prediction.fens = []
+	check(not app.valid_imported_review(broken_prediction), "broken prediction rejection")
 	var exported_job: int = app.full_review.jobId
 	app.full_review = {}
 	app.evaluation_graph.set_results([])
