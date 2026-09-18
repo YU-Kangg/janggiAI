@@ -40,6 +40,7 @@ var full_review: Dictionary = {}
 var full_review_start := Button.new()
 var full_review_cancel := Button.new()
 var evaluation_graph = EvaluationGraph.new()
+var previous_key_move_button := Button.new()
 var next_key_move_button := Button.new()
 var retry_button := Button.new()
 var retry_mode := false
@@ -157,6 +158,10 @@ func _ready() -> void:
 	variation_resume.custom_minimum_size.y = 44
 	variation_resume.pressed.connect(resume_review)
 	navigation.add_child(variation_resume)
+	previous_key_move_button.text = "이전 핵심 수"
+	previous_key_move_button.custom_minimum_size.y = 44
+	previous_key_move_button.pressed.connect(previous_key_move)
+	navigation.add_child(previous_key_move_button)
 	next_key_move_button.text = "다음 핵심 수"
 	next_key_move_button.custom_minimum_size.y = 44
 	next_key_move_button.pressed.connect(next_key_move)
@@ -500,6 +505,22 @@ func next_key_ply(after_ply: int) -> int:
 			return int(item.ply)
 	return -1
 
+func previous_key_ply(before_ply: int) -> int:
+	var results: Array = full_review.get("results", [])
+	for index in range(results.size() - 1, -1, -1):
+		var item: Dictionary = results[index]
+		var key := str(item.get("classification", {}).get("key", ""))
+		if int(item.get("ply", -1)) < before_ply and key in ["inaccuracy", "mistake", "blunder"]:
+			return int(item.ply)
+	return -1
+
+func previous_key_move() -> void:
+	if pending or review.is_empty() or not variation.is_empty():
+		return
+	var ply := previous_key_ply(view_ply())
+	if ply >= 0:
+		show_review(ply)
+
 func next_key_move() -> void:
 	if pending or review.is_empty() or not variation.is_empty():
 		return
@@ -828,6 +849,7 @@ func render_position(state: Dictionary) -> void:
 	variation_start.disabled = pending or review.is_empty() or not variation.is_empty()
 	variation_undo.disabled = pending or variation.is_empty() or variation_moves.is_empty()
 	variation_resume.disabled = pending or variation.is_empty()
+	previous_key_move_button.disabled = pending or review.is_empty() or not variation.is_empty() or previous_key_ply(view_ply()) < 0
 	next_key_move_button.disabled = pending or review.is_empty() or not variation.is_empty() or next_key_ply(view_ply()) < 0
 	retry_button.disabled = pending or review.is_empty() or not variation.is_empty() or view_ply() < 1 or cached_review_result(view_ply()).is_empty()
 	retry_hint_button.disabled = pending or not retry_mode or variation.is_empty() or not variation_moves.is_empty() or retry_hint_stage >= 2
