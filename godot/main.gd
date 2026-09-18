@@ -44,6 +44,7 @@ var full_review_cancel := Button.new()
 var evaluation_graph = EvaluationGraph.new()
 var previous_key_move_button := Button.new()
 var next_key_move_button := Button.new()
+var key_move_filter := OptionButton.new()
 var retry_button := Button.new()
 var retry_mode := false
 var retry_review_ply := -1
@@ -170,6 +171,11 @@ func _ready() -> void:
 	previous_key_move_button.custom_minimum_size.y = 44
 	previous_key_move_button.pressed.connect(previous_key_move)
 	navigation.add_child(previous_key_move_button)
+	key_move_filter.add_item("핵심: 부정확 이상")
+	key_move_filter.add_item("핵심: 실수 이상")
+	key_move_filter.add_item("핵심: 큰 실수만")
+	key_move_filter.item_selected.connect(func(_index: int): render_board())
+	navigation.add_child(key_move_filter)
 	next_key_move_button.text = "다음 핵심 수"
 	next_key_move_button.custom_minimum_size.y = 44
 	next_key_move_button.pressed.connect(next_key_move)
@@ -536,7 +542,7 @@ func next_key_ply(after_ply: int) -> int:
 		return -1
 	for item in full_review.get("results", []):
 		var key := str(item.get("classification", {}).get("key", ""))
-		if int(item.get("ply", -1)) > after_ply and key in ["inaccuracy", "mistake", "blunder"]:
+		if int(item.get("ply", -1)) > after_ply and is_key_classification(key):
 			return int(item.ply)
 	return -1
 
@@ -545,7 +551,7 @@ func previous_key_ply(before_ply: int) -> int:
 	for index in range(results.size() - 1, -1, -1):
 		var item: Dictionary = results[index]
 		var key := str(item.get("classification", {}).get("key", ""))
-		if int(item.get("ply", -1)) < before_ply and key in ["inaccuracy", "mistake", "blunder"]:
+		if int(item.get("ply", -1)) < before_ply and is_key_classification(key):
 			return int(item.ply)
 	return -1
 
@@ -556,11 +562,20 @@ func previous_key_move() -> void:
 	if ply >= 0:
 		show_review(ply)
 
+func is_key_classification(key: String) -> bool:
+	match key_move_filter.selected:
+		1:
+			return key in ["mistake", "blunder"]
+		2:
+			return key == "blunder"
+		_:
+			return key in ["inaccuracy", "mistake", "blunder"]
+
 func format_key_move_status(ply: int) -> String:
 	var key_plies: Array[int] = []
 	for item in full_review.get("results", []):
 		var key := str(item.get("classification", {}).get("key", ""))
-		if key in ["inaccuracy", "mistake", "blunder"]:
+		if is_key_classification(key):
 			key_plies.append(int(item.get("ply", -1)))
 	if key_plies.is_empty():
 		return ""

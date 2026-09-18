@@ -64,6 +64,11 @@ func run() -> void:
 	app.show_review(0)
 	await wait_idle()
 	app.full_review.results[1].classification = {"key": "inaccuracy", "label": "부정확", "experimental": true}
+	app.key_move_filter.select(1)
+	check(not app.is_key_classification("inaccuracy") and app.is_key_classification("mistake"), "mistake-or-worse key filter")
+	app.key_move_filter.select(2)
+	check(not app.is_key_classification("mistake") and app.is_key_classification("blunder"), "blunder-only key filter")
+	app.key_move_filter.select(0)
 	check(app.next_key_ply(0) == 2, "next key move finds classified mistake")
 	app.next_key_move()
 	await wait_idle()
