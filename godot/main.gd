@@ -49,6 +49,8 @@ var retry_hint_button := Button.new()
 var retry_hint_stage := 0
 var prediction_button := Button.new()
 var prediction_stop_button := Button.new()
+var prediction_previous_button := Button.new()
+var prediction_next_button := Button.new()
 var prediction_index := -1
 var prediction_generation := 0
 var prediction_playing := false
@@ -175,6 +177,14 @@ func _ready() -> void:
 	prediction_stop_button.custom_minimum_size.y = 44
 	prediction_stop_button.pressed.connect(stop_prediction)
 	navigation.add_child(prediction_stop_button)
+	prediction_previous_button.text = "수순 이전"
+	prediction_previous_button.custom_minimum_size.y = 44
+	prediction_previous_button.pressed.connect(func(): step_prediction(-1))
+	navigation.add_child(prediction_previous_button)
+	prediction_next_button.text = "수순 다음"
+	prediction_next_button.custom_minimum_size.y = 44
+	prediction_next_button.pressed.connect(func(): step_prediction(1))
+	navigation.add_child(prediction_next_button)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
 	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
@@ -545,6 +555,29 @@ func stop_prediction() -> void:
 	message.text = "엔진 예상 수순 정지 · %d/%d" % [maxi(prediction_index, 0), maxi(total, 0)]
 	render_board()
 
+func step_prediction(offset: int) -> void:
+	if review.is_empty() or not variation.is_empty() or review_analysis.is_empty():
+		return
+	var fens: Array = review_analysis.get("prediction", {}).get("fens", [])
+	if fens.size() < 2:
+		return
+	if prediction_playing:
+		prediction_generation += 1
+		prediction_playing = false
+	var current := prediction_index if prediction_index >= 0 else 0
+	var next_index: int = clampi(current + offset, 0, fens.size() - 1)
+	var preview := review.duplicate(true)
+	preview["fen"] = fens[next_index]
+	preview["legalMoves"] = []
+	preview["outcome"] = {"over": false, "result": "*", "winner": null, "reason": null}
+	analysis_preview = preview
+	prediction_index = next_index
+	analysis_generation += 1
+	analysis_move = ""
+	analysis_stage = 0
+	message.text = "엔진 예상 수순 · %d/%d" % [next_index, fens.size() - 1]
+	render_board()
+
 func play_review_analysis(payload: Dictionary) -> void:
 	analysis_generation += 1
 	var generation := analysis_generation
@@ -795,3 +828,6 @@ func render_position(state: Dictionary) -> void:
 	retry_hint_button.disabled = pending or not retry_mode or variation.is_empty() or not variation_moves.is_empty() or retry_hint_stage >= 2
 	prediction_button.disabled = pending or review.is_empty() or not variation.is_empty() or review_analysis.get("prediction", {}).get("fens", []).size() < 2
 	prediction_stop_button.disabled = not prediction_playing
+	var prediction_size: int = review_analysis.get("prediction", {}).get("fens", []).size()
+	prediction_previous_button.disabled = pending or review.is_empty() or not variation.is_empty() or prediction_size < 2 or prediction_index <= 0
+	prediction_next_button.disabled = pending or review.is_empty() or not variation.is_empty() or prediction_size < 2 or prediction_index >= prediction_size - 1
