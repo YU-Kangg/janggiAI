@@ -133,6 +133,11 @@ test('전체 기보 리뷰는 위치 평가를 재사용하며 백그라운드 �
   assert.deepEqual(complete.results.map(item => item.analysis.lossCp), [10, 5]);
   assert.deepEqual(calls, [[], ['a4b4'], ['a4b4', 'a7b7']]);
   assert.deepEqual(game.snapshot(), before);
+
+  const cached = await act(game, 'review-start');
+  assert.equal(cached.status, 'complete');
+  assert.equal(cached.jobId, started.jobId);
+  assert.deepEqual(calls, [[], ['a4b4'], ['a4b4', 'a7b7']]);
 });
 
 test('전체 기보 리뷰는 취소할 수 있음', async () => {

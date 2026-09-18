@@ -176,7 +176,9 @@ export class Game {
   }
 
   startFullReview() {
-    if (this.fullReviewJob?.status === 'running') return this.fullReviewSnapshot();
+    if (this.fullReviewJob?.revision === this.revision && ['running', 'complete'].includes(this.fullReviewJob.status)) {
+      return this.fullReviewSnapshot();
+    }
     const job = {
       id: this.nextReviewJobId++, revision: this.revision, status: 'running', completed: 0,
       total: this.moves.length, results: [], error: null, controller: new AbortController(),
