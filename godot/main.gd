@@ -809,7 +809,12 @@ func render_position(state: Dictionary) -> void:
 	for index in range(self.state.moves.size()):
 		var pair := split_move(self.state.moves[index])
 		var description: String = "한수쉼" if pair[0] == pair[1] else "%s → %s" % [pair[0], pair[1]]
-		history.add_item("%d수 · %s %s" % [index + 1, "초" if index % 2 == 0 else "한", description])
+		var classification_suffix := ""
+		var reviewed := cached_review_result(index + 1)
+		if not reviewed.is_empty():
+			var classification: Dictionary = reviewed.get("classification", {})
+			classification_suffix = " · [%s]" % str(classification.get("label", "분류 제외"))
+		history.add_item("%d수 · %s %s%s" % [index + 1, "초" if index % 2 == 0 else "한", description, classification_suffix])
 	history.select(view_ply())
 	evaluation_graph.select_ply(view_ply())
 	review_buttons[0].disabled = pending or self.state.moves.is_empty()
