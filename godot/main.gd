@@ -331,6 +331,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		return
 	if current_path in ["review-start", "review-status", "review-latest", "review-cancel"]:
 		if current_path == "review-latest" and payload.get("status", "") == "none":
+			import_full_review(false)
 			render_board()
 			return
 		if not payload.has("jobId") or not payload.has("status") or not payload.has("completed") or not payload.has("total"):
@@ -343,6 +344,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 				message.text = "전체 리뷰 완료 · %d수" % int(payload.total)
 				evaluation_graph.set_results(payload.results)
 				review_summary.text = format_review_summary(payload.get("summary", {}))
+				export_full_review(false)
 			elif payload.status == "cancelled":
 				message.text = "전체 리뷰를 취소했습니다."
 			else:
@@ -402,9 +404,9 @@ func cancel_full_review() -> void:
 		return
 	send("review-cancel", {"revision": state.revision, "jobId": full_review.jobId})
 
-func export_full_review() -> void:
+func export_full_review(notify_user := true) -> bool:
 	if full_review.get("status", "") != "complete" or state.is_empty():
-		return
+		return false
 	var payload := {
 		"schemaVersion": 1,
 		"variant": "janggi",
@@ -418,12 +420,15 @@ func export_full_review() -> void:
 	}
 	var file := FileAccess.open(review_export_path, FileAccess.WRITE)
 	if file == null:
-		message.text = "리뷰 JSON 저장에 실패했습니다."
-		return
+		if notify_user:
+			message.text = "리뷰 JSON 저장에 실패했습니다."
+		return false
 	file.store_string(JSON.stringify(payload, "  "))
 	file.close()
-	message.text = "리뷰 JSON 저장 완료 · %s" % review_export_path
-	render_board()
+	if notify_user:
+		message.text = "리뷰 JSON 저장 완료 · %s" % review_export_path
+		render_board()
+	return true
 
 func valid_imported_review(payload: Variant) -> bool:
 	if not payload is Dictionary or int(payload.get("schemaVersion", 0)) != 1 or payload.get("variant", "") != "janggi":
@@ -440,19 +445,21 @@ func valid_imported_review(payload: Variant) -> bool:
 		return false
 	return imported_review.results.size() == state.moves.size()
 
-func import_full_review() -> void:
+func import_full_review(notify_user := true) -> bool:
 	if state.is_empty() or not FileAccess.file_exists(review_export_path):
-		return
+		return false
 	var payload = JSON.parse_string(FileAccess.get_file_as_string(review_export_path))
 	if not valid_imported_review(payload):
-		message.text = "현재 대국과 일치하는 리뷰 JSON이 아닙니다."
-		render_board()
-		return
+		if notify_user:
+			message.text = "현재 대국과 일치하는 리뷰 JSON이 아닙니다."
+			render_board()
+		return false
 	full_review = payload.review.duplicate(true)
 	evaluation_graph.set_results(full_review.results)
 	review_summary.text = format_review_summary(full_review.summary)
-	message.text = "리뷰 JSON 불러오기 완료 · %d수" % int(full_review.total)
+	message.text = ("리뷰 JSON 불러오기 완료" if notify_user else "저장된 리뷰 자동 복원") + " · %d수" % int(full_review.total)
 	render_board()
+	return true
 
 func view_ply() -> int:
 	return review.moves.size() if not review.is_empty() else state.get("moves", []).size()

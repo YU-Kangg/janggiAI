@@ -39,6 +39,9 @@ func run() -> void:
 		await wait_idle()
 	check(app.state.moves.size() == 2 and app.state.turn == "cho", "NNUE AI reply")
 	var live_fen: String = app.state.fen
+	app.review_export_path = "user://janggi-review-smoke.json"
+	if FileAccess.file_exists(app.review_export_path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(app.review_export_path))
 	app.start_full_review()
 	await wait_idle()
 	check(app.full_review.status == "running" and app.full_review.total == 2, "full review starts in background")
@@ -49,7 +52,7 @@ func run() -> void:
 		app.request_state()
 		await wait_idle()
 	check(app.full_review.status == "complete" and app.full_review.results.size() == 2, "full review progress and completion")
-	app.review_export_path = "user://janggi-review-smoke.json"
+	check(FileAccess.file_exists(app.review_export_path), "completed review automatic local save")
 	app.export_full_review()
 	var exported_review = JSON.parse_string(FileAccess.get_file_as_string(app.review_export_path))
 	check(exported_review is Dictionary and exported_review.schemaVersion == 1 and exported_review.game.moves.size() == 2 and exported_review.review.results.size() == 2, "review JSON export")
@@ -61,8 +64,8 @@ func run() -> void:
 	app.full_review = {}
 	app.evaluation_graph.set_results([])
 	app.review_summary.text = ""
-	app.import_full_review()
-	check(app.full_review.jobId == exported_job and app.evaluation_graph.values.size() == 3 and app.review_summary.text.contains("리뷰 요약"), "review JSON import")
+	app.import_full_review(false)
+	check(app.full_review.jobId == exported_job and app.evaluation_graph.values.size() == 3 and app.review_summary.text.contains("리뷰 요약") and app.message.text.contains("자동 복원"), "review JSON automatic restore")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(app.review_export_path))
 	check(app.review_summary.text.contains("리뷰 요약") and app.review_summary.text.contains("최선") and app.review_summary.text.contains("초 1수") and app.review_summary.text.contains("한 1수"), "classification and side summary display")
 	check(app.history.get_item_text(1).contains("[최선]"), "history move classification label")
