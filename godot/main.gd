@@ -50,6 +50,7 @@ var retry_mode := false
 var retry_review_ply := -1
 var retry_expected_move := ""
 var retry_hint_button := Button.new()
+var retry_next_button := Button.new()
 var retry_hint_stage := 0
 var prediction_button := Button.new()
 var prediction_stop_button := Button.new()
@@ -188,6 +189,10 @@ func _ready() -> void:
 	retry_hint_button.custom_minimum_size.y = 44
 	retry_hint_button.pressed.connect(show_retry_hint)
 	navigation.add_child(retry_hint_button)
+	retry_next_button.text = "다음 실수 연습"
+	retry_next_button.custom_minimum_size.y = 44
+	retry_next_button.pressed.connect(continue_retry_to_next_key)
+	navigation.add_child(retry_next_button)
 	prediction_button.text = "예상 수순"
 	prediction_button.custom_minimum_size.y = 44
 	prediction_button.pressed.connect(play_prediction)
@@ -445,6 +450,23 @@ func show_retry_hint() -> void:
 	retry_hint_stage += 1
 	message.text = "힌트 · 움직일 기물을 표시했습니다." if retry_hint_stage == 1 else "힌트 · 도착 칸까지 표시했습니다."
 	render_board()
+
+func retry_succeeded() -> bool:
+	return retry_mode and variation_moves.size() == 1 and variation_moves[0] == retry_expected_move
+
+func continue_retry_to_next_key() -> void:
+	if pending or not retry_succeeded():
+		return
+	var target_ply := next_key_ply(retry_review_ply)
+	if target_ply < 0:
+		return
+	clear_variation()
+	retry_mode = false
+	retry_review_ply = -1
+	retry_expected_move = ""
+	retry_hint_stage = 0
+	selected = ""
+	show_review(target_ply)
 
 func play_variation_move(move: String) -> void:
 	if pending or variation.is_empty() or not variation.legalMoves.has(move):
@@ -959,6 +981,7 @@ func render_position(state: Dictionary) -> void:
 	next_key_move_button.disabled = pending or review.is_empty() or not variation.is_empty() or next_key_ply(view_ply()) < 0
 	retry_button.disabled = pending or review.is_empty() or not variation.is_empty() or view_ply() < 1 or cached_review_result(view_ply()).is_empty()
 	retry_hint_button.disabled = pending or not retry_mode or variation.is_empty() or not variation_moves.is_empty() or retry_hint_stage >= 2
+	retry_next_button.disabled = pending or not retry_succeeded() or next_key_ply(retry_review_ply) < 0
 	prediction_button.disabled = pending or review.is_empty() or not variation.is_empty() or review_analysis.get("prediction", {}).get("fens", []).size() < 2
 	prediction_stop_button.disabled = not prediction_playing
 	var prediction_size: int = review_analysis.get("prediction", {}).get("fens", []).size()
