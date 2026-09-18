@@ -73,6 +73,8 @@ var device_cancel := Button.new()
 var device_request: Dictionary = {}
 var recommended_move := ""
 var page_scroll := ScrollContainer.new()
+var last_animated_move := ""
+var piece_move_animation_seconds := 0.18
 
 func _ready() -> void:
 	var margin := MarginContainer.new()
@@ -744,6 +746,8 @@ func play_prediction() -> void:
 		prediction_index = index
 		message.text = "엔진 예상 수순 재생 · %d/%d" % [index, fens.size() - 1]
 		render_board()
+		if index > 0:
+			animate_piece_move(str(review_analysis.prediction.moves[index - 1]))
 		if index < fens.size() - 1:
 			await get_tree().create_timer(playback_delay()).timeout
 	if generation == prediction_generation:
@@ -781,6 +785,9 @@ func step_prediction(offset: int) -> void:
 	analysis_stage = 0
 	message.text = "엔진 예상 수순 · %d/%d" % [next_index, fens.size() - 1]
 	render_board()
+	if next_index != current:
+		var move: String = str(review_analysis.prediction.moves[mini(current, next_index)])
+		animate_piece_move(move if next_index > current else reverse_move(move))
 
 func play_game_review() -> void:
 	if pending or state.is_empty() or state.moves.is_empty() or not variation.is_empty():
@@ -798,6 +805,8 @@ func play_game_review() -> void:
 			return
 		message.text = "기보 재생 · %d/%d수" % [ply, state.moves.size()]
 		render_board()
+		if ply > 0:
+			animate_piece_move(str(state.moves[ply - 1]))
 		if ply < state.moves.size():
 			await get_tree().create_timer(playback_delay()).timeout
 	if generation == game_review_generation:
@@ -842,6 +851,31 @@ func play_review_analysis(payload: Dictionary) -> void:
 	analysis_preview.moves.append(payload.recommendedMove)
 	analysis_stage = 2
 	render_board()
+	animate_piece_move(analysis_move)
+
+func reverse_move(move: String) -> String:
+	var coordinates := split_move(move)
+	return str(coordinates[1]) + str(coordinates[0]) if coordinates.size() == 2 else ""
+
+func animate_piece_move(move: String) -> void:
+	var coordinates := split_move(move)
+	if coordinates.size() != 2:
+		return
+	last_animated_move = move
+	call_deferred("run_piece_move_animation", str(coordinates[0]), str(coordinates[1]))
+
+func run_piece_move_animation(from_square: String, to_square: String) -> void:
+	await get_tree().process_frame
+	if not squares.has(from_square) or not squares.has(to_square):
+		return
+	var source: Control = squares[from_square]
+	var destination: Control = squares[to_square]
+	var target_position := destination.position
+	destination.position += source.position - target_position
+	destination.z_index = 2
+	var tween := create_tween()
+	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(destination, "position", target_position, piece_move_animation_seconds)
 
 func format_evaluation(value: Variant) -> String:
 	if not value is Dictionary:

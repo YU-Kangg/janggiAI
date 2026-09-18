@@ -133,6 +133,7 @@ func run() -> void:
 	check(app.analysis_stage == 1 and app.analysis_preview.fen == app.review_analysis.beforeFen, "recommendation source highlight")
 	await create_timer(0.6).timeout
 	check(app.analysis_stage == 2 and app.analysis_preview.fen == app.review_analysis.recommendedFen, "recommended piece movement")
+	check(app.last_animated_move == app.review_analysis.recommendedMove, "recommended piece movement animation")
 	check(app.review_analysis.prediction.fens.size() >= 2, "prediction positions available")
 	app.play_prediction()
 	await create_timer(0.1).timeout
@@ -144,8 +145,10 @@ func run() -> void:
 	check(app.playback_delay() == 0.25, "shared fast playback speed")
 	app.step_prediction(1)
 	check(app.prediction_index == 1 and app.analysis_preview.fen == app.review_analysis.prediction.fens[1], "prediction manual next")
+	check(app.last_animated_move == app.review_analysis.prediction.moves[0], "prediction forward animation")
 	app.step_prediction(-1)
 	check(app.prediction_index == 0 and app.analysis_preview.fen == app.review_analysis.prediction.fens[0], "prediction manual previous")
+	check(app.last_animated_move == app.reverse_move(app.review_analysis.prediction.moves[0]), "prediction reverse animation")
 	app.play_prediction()
 	await create_timer(0.35).timeout
 	check(app.prediction_index >= 1 and app.message.text.contains("예상 수순"), "prediction auto playback")
