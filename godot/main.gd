@@ -12,6 +12,7 @@ var status := Label.new()
 var message := Label.new()
 var score_panel := Label.new()
 var review_summary := Label.new()
+var key_move_status := Label.new()
 var grid := GridContainer.new()
 var side := OptionButton.new()
 var action_buttons: Array[Button] = []
@@ -98,6 +99,7 @@ func _ready() -> void:
 	column.add_child(evaluation_graph)
 	review_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(review_summary)
+	column.add_child(key_move_status)
 	side.add_item("초로 AI 대국")
 	side.add_item("한으로 AI 대국")
 	column.add_child(side)
@@ -521,6 +523,19 @@ func previous_key_move() -> void:
 	if ply >= 0:
 		show_review(ply)
 
+func format_key_move_status(ply: int) -> String:
+	var key_plies: Array[int] = []
+	for item in full_review.get("results", []):
+		var key := str(item.get("classification", {}).get("key", ""))
+		if key in ["inaccuracy", "mistake", "blunder"]:
+			key_plies.append(int(item.get("ply", -1)))
+	if key_plies.is_empty():
+		return ""
+	var current_index := key_plies.find(ply)
+	if current_index >= 0:
+		return "핵심 장면 %d/%d" % [current_index + 1, key_plies.size()]
+	return "핵심 장면 %d개" % key_plies.size()
+
 func next_key_move() -> void:
 	if pending or review.is_empty() or not variation.is_empty():
 		return
@@ -838,6 +853,7 @@ func render_position(state: Dictionary) -> void:
 		history.add_item("%d수 · %s %s%s" % [index + 1, "초" if index % 2 == 0 else "한", description, classification_suffix])
 	history.select(view_ply())
 	evaluation_graph.select_ply(view_ply())
+	key_move_status.text = format_key_move_status(view_ply())
 	review_buttons[0].disabled = pending or self.state.moves.is_empty()
 	review_buttons[1].disabled = pending or view_ply() == 0
 	review_buttons[2].disabled = pending or review.is_empty() or view_ply() >= self.state.moves.size()

@@ -62,12 +62,14 @@ func run() -> void:
 	app.next_key_move()
 	await wait_idle()
 	check(app.review.moves.size() == 2, "next key move navigation")
+	check(app.key_move_status.text == "핵심 장면 1/1", "key move position display")
 	check(app.previous_key_ply(2) == -1, "no previous key move before first classified mistake")
 	app.full_review.results[0].classification = {"key": "mistake", "label": "실수", "experimental": true}
 	check(app.previous_key_ply(2) == 1, "previous key move finds classified mistake")
 	app.previous_key_move()
 	await wait_idle()
 	check(app.review.moves.size() == 1, "previous key move navigation")
+	check(app.key_move_status.text == "핵심 장면 1/2", "previous key move position display")
 	app.full_review.results[0].classification = {"key": "best", "label": "최선", "experimental": true}
 	app.show_review(0)
 	await wait_idle()
