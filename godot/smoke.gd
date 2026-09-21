@@ -146,9 +146,11 @@ func run() -> void:
 	app.step_prediction(1)
 	check(app.prediction_index == 1 and app.analysis_preview.fen == app.review_analysis.prediction.fens[1], "prediction manual next")
 	check(app.last_animated_move == app.review_analysis.prediction.moves[0], "prediction forward animation")
+	check(app.playback_move == app.review_analysis.prediction.moves[0], "prediction move remains highlighted")
 	app.step_prediction(-1)
 	check(app.prediction_index == 0 and app.analysis_preview.fen == app.review_analysis.prediction.fens[0], "prediction manual previous")
 	check(app.last_animated_move == app.reverse_move(app.review_analysis.prediction.moves[0]), "prediction reverse animation")
+	check(app.playback_move == "", "prediction start clears move highlight")
 	app.play_prediction()
 	await create_timer(0.35).timeout
 	check(app.prediction_index >= 1 and app.message.text.contains("예상 수순"), "prediction auto playback")

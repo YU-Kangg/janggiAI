@@ -75,6 +75,7 @@ var recommended_move := ""
 var page_scroll := ScrollContainer.new()
 var last_animated_move := ""
 var piece_move_animation_seconds := 0.18
+var playback_move := ""
 
 func _ready() -> void:
 	var margin := MarginContainer.new()
@@ -722,6 +723,7 @@ func clear_review_analysis() -> void:
 	analysis_preview = {}
 	analysis_move = ""
 	analysis_stage = 0
+	playback_move = ""
 
 func play_prediction() -> void:
 	if pending or review.is_empty() or not variation.is_empty() or review_analysis.is_empty():
@@ -744,6 +746,7 @@ func play_prediction() -> void:
 		preview["outcome"] = {"over": false, "result": "*", "winner": null, "reason": null}
 		analysis_preview = preview
 		prediction_index = index
+		playback_move = str(review_analysis.prediction.moves[index - 1]) if index > 0 else ""
 		message.text = "엔진 예상 수순 재생 · %d/%d" % [index, fens.size() - 1]
 		render_board()
 		if index > 0:
@@ -780,6 +783,7 @@ func step_prediction(offset: int) -> void:
 	preview["outcome"] = {"over": false, "result": "*", "winner": null, "reason": null}
 	analysis_preview = preview
 	prediction_index = next_index
+	playback_move = str(review_analysis.prediction.moves[next_index - 1]) if next_index > 0 else ""
 	analysis_generation += 1
 	analysis_move = ""
 	analysis_stage = 0
@@ -804,6 +808,7 @@ func play_game_review() -> void:
 		if generation != game_review_generation:
 			return
 		message.text = "기보 재생 · %d/%d수" % [ply, state.moves.size()]
+		playback_move = str(state.moves[ply - 1]) if ply > 0 else ""
 		render_board()
 		if ply > 0:
 			animate_piece_move(str(state.moves[ply - 1]))
@@ -1042,6 +1047,11 @@ func render_position(state: Dictionary) -> void:
 			if review_recommendation.size() == 2 and square == review_recommendation[0]:
 				button.modulate = Color(1, 0.78, 0.2)
 			elif review_recommendation.size() == 2 and analysis_stage == 2 and square == review_recommendation[1]:
+				button.modulate = Color(0.35, 1, 0.55)
+			var playback_highlight := split_move(playback_move)
+			if analysis_move == "" and playback_highlight.size() == 2 and square == playback_highlight[0]:
+				button.modulate = Color(1, 0.78, 0.2)
+			elif analysis_move == "" and playback_highlight.size() == 2 and square == playback_highlight[1]:
 				button.modulate = Color(0.35, 1, 0.55)
 			var retry_hint := split_move(retry_expected_move)
 			if retry_mode and retry_hint.size() == 2 and retry_hint_stage >= 1 and square == retry_hint[0]:
