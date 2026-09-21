@@ -657,6 +657,9 @@ func format_review_summary(summary: Dictionary) -> String:
 		text += " · 평균 깊이 %d" % int(summary.averageDepth)
 	if int(summary.get("totalAnalysisMs", 0)) > 0:
 		text += " · 엔진 %.1f초" % (float(summary.totalAnalysisMs) / 1000.0)
+	var worst: Variant = summary.get("worstMove")
+	if worst is Dictionary:
+		text += "\n최대 손실 · %d수 %s · %dcp" % [int(worst.get("ply", 0)), "초" if worst.get("side") == "cho" else "한", int(worst.get("lossCp", 0))]
 	if summary.get("averageLossCp") != null:
 		text += " · 비교 가능 %d수 · 평균 손실 %dcp" % [int(summary.get("comparableMoves", 0)), int(summary.averageLossCp)]
 	var by_side: Dictionary = summary.get("bySide", {})

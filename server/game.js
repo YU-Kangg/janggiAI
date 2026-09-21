@@ -24,6 +24,7 @@ export function summarizeReview(results) {
   let depthTotal = 0;
   let depthCount = 0;
   let totalAnalysisMs = 0;
+  let worstMove = null;
   for (const item of results) {
     const key = item.classification?.key ?? 'unclassified';
     counts[key] = (counts[key] ?? 0) + 1;
@@ -38,6 +39,9 @@ export function summarizeReview(results) {
       if (side) {
         side.lossTotal += item.analysis.lossCp;
         side.lossCount++;
+      }
+      if (!worstMove || item.analysis.lossCp > worstMove.lossCp) {
+        worstMove = { ply: item.ply, side: item.side, lossCp: item.analysis.lossCp };
       }
     }
     if (Number.isFinite(item.analysis?.before?.depth)) {
@@ -55,6 +59,7 @@ export function summarizeReview(results) {
     bestMoveRate: results.length ? Math.round((counts.best / results.length) * 100) : null,
     averageDepth: depthCount ? Math.round(depthTotal / depthCount) : null,
     totalAnalysisMs,
+    worstMove,
     averageLossCp: lossCount ? Math.round(lossTotal / lossCount) : null,
     bySide: Object.fromEntries(Object.entries(sideStats).map(([side, value]) => [side, {
       total: value.total,
