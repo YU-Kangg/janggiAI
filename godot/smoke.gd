@@ -75,6 +75,7 @@ func run() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(app.review_export_path))
 	check(app.review_summary.text.contains("리뷰 요약") and app.review_summary.text.contains("최선") and app.review_summary.text.contains("초 1수") and app.review_summary.text.contains("한 1수"), "classification and side summary display")
 	check(app.history.get_item_text(1).contains("[최선]"), "history move classification label")
+	check(app.history.get_item_text(1).contains("cp"), "history move evaluation loss")
 	var completed_review_job: int = app.full_review.jobId
 	app.full_review = {}
 	app.review_restore_revision = -1

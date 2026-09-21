@@ -1131,6 +1131,8 @@ func render_position(state: Dictionary) -> void:
 		if not reviewed.is_empty():
 			var classification: Dictionary = reviewed.get("classification", {})
 			classification_suffix = " · [%s]" % str(classification.get("label", "분류 제외"))
+			if reviewed.get("analysis", {}).get("lossCp") != null:
+				classification_suffix += " %dcp" % int(reviewed.analysis.lossCp)
 		history.add_item("%d수 · %s %s%s" % [index + 1, "초" if index % 2 == 0 else "한", description, classification_suffix])
 	history.select(view_ply())
 	evaluation_graph.select_ply(view_ply())
