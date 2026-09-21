@@ -28,8 +28,8 @@ test('cp로 비교할 수 없는 종료·mate·평가 누락은 등급에서 제
 
 test('전체 리뷰 요약은 등급 수와 핵심 수 및 평균 손실을 집계', () => {
   const results = [
-    { side: 'cho', classification: { key: 'best' }, analysis: { lossCp: 0, before: { depth: 12 } } },
-    { side: 'han', classification: { key: 'inaccuracy' }, analysis: { lossCp: 50, before: { depth: 14 } } },
+    { side: 'cho', classification: { key: 'best' }, analysis: { lossCp: 0, before: { depth: 12, timeMs: 300 }, after: { timeMs: 280 } } },
+    { side: 'han', classification: { key: 'inaccuracy' }, analysis: { lossCp: 50, before: { depth: 14, timeMs: 310 }, after: { timeMs: 290 } } },
     { side: 'cho', classification: { key: 'blunder' }, analysis: { lossCp: 200 } },
     { side: 'han', classification: { key: 'unclassified' }, analysis: { lossCp: null } },
   ];
@@ -43,6 +43,7 @@ test('전체 리뷰 요약은 등급 수와 핵심 수 및 평균 손실을 집�
   assert.equal(summary.comparableMoves, 3);
   assert.equal(summary.bestMoveRate, 25);
   assert.equal(summary.averageDepth, 13);
+  assert.equal(summary.totalAnalysisMs, 1180);
   assert.equal(summary.averageLossCp, 83);
   assert.deepEqual(summary.bySide, {
     cho: { total: 2, keyMoves: 1, averageLossCp: 100 },
