@@ -47,6 +47,7 @@ var review_export_path := "user://janggi-review.json"
 var evaluation_graph = EvaluationGraph.new()
 var previous_key_move_button := Button.new()
 var next_key_move_button := Button.new()
+var worst_move_button := Button.new()
 var key_move_filter := OptionButton.new()
 var retry_button := Button.new()
 var retry_mode := false
@@ -195,6 +196,10 @@ func _ready() -> void:
 	next_key_move_button.custom_minimum_size.y = 44
 	next_key_move_button.pressed.connect(next_key_move)
 	navigation.add_child(next_key_move_button)
+	worst_move_button.text = "최대 손실 수"
+	worst_move_button.custom_minimum_size.y = 44
+	worst_move_button.pressed.connect(show_worst_move)
+	navigation.add_child(worst_move_button)
 	retry_button.text = "다시 두기"
 	retry_button.custom_minimum_size.y = 44
 	retry_button.pressed.connect(start_retry)
@@ -723,6 +728,17 @@ func next_key_move() -> void:
 	if ply >= 0:
 		show_review(ply)
 
+func worst_move_ply() -> int:
+	var worst: Variant = full_review.get("summary", {}).get("worstMove")
+	return int(worst.get("ply", -1)) if worst is Dictionary else -1
+
+func show_worst_move() -> void:
+	if pending or not variation.is_empty():
+		return
+	var ply := worst_move_ply()
+	if ply > 0:
+		show_review(ply)
+
 func clear_review_analysis() -> void:
 	analysis_generation += 1
 	prediction_generation += 1
@@ -1132,6 +1148,7 @@ func render_position(state: Dictionary) -> void:
 	variation_resume.disabled = pending or variation.is_empty()
 	previous_key_move_button.disabled = pending or review.is_empty() or not variation.is_empty() or previous_key_ply(view_ply()) < 0
 	next_key_move_button.disabled = pending or review.is_empty() or not variation.is_empty() or next_key_ply(view_ply()) < 0
+	worst_move_button.disabled = pending or not variation.is_empty() or worst_move_ply() < 1
 	retry_button.disabled = pending or review.is_empty() or not variation.is_empty() or view_ply() < 1 or cached_review_result(view_ply()).is_empty()
 	retry_hint_button.disabled = pending or not retry_mode or variation.is_empty() or not variation_moves.is_empty() or retry_hint_stage >= 2
 	retry_next_button.disabled = pending or not retry_succeeded() or next_key_ply(retry_review_ply) < 0
