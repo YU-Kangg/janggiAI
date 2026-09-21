@@ -659,7 +659,7 @@ func format_review_summary(summary: Dictionary) -> String:
 	for side_key in ["cho", "han"]:
 		var side_summary: Dictionary = by_side.get(side_key, {})
 		if side_summary.get("averageLossCp") != null:
-			text += "\n%s %d수 · 평균 손실 %dcp" % ["초" if side_key == "cho" else "한", int(side_summary.get("total", 0)), int(side_summary.averageLossCp)]
+			text += "\n%s %d수 · 핵심 %d수 · 평균 손실 %dcp" % ["초" if side_key == "cho" else "한", int(side_summary.get("total", 0)), int(side_summary.get("keyMoves", 0)), int(side_summary.averageLossCp)]
 	return text
 
 func next_key_ply(after_ply: int) -> int:

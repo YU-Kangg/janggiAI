@@ -44,7 +44,7 @@ test('전체 리뷰 요약은 등급 수와 핵심 수 및 평균 손실을 집�
   assert.equal(summary.bestMoveRate, 25);
   assert.equal(summary.averageLossCp, 83);
   assert.deepEqual(summary.bySide, {
-    cho: { total: 2, averageLossCp: 100 },
-    han: { total: 2, averageLossCp: 50 },
+    cho: { total: 2, keyMoves: 1, averageLossCp: 100 },
+    han: { total: 2, keyMoves: 1, averageLossCp: 50 },
   });
 });

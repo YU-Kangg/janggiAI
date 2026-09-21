@@ -16,8 +16,8 @@ export function classifyMove(match, lossCp) {
 export function summarizeReview(results) {
   const counts = { best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0, unclassified: 0 };
   const sideStats = {
-    cho: { total: 0, lossTotal: 0, lossCount: 0 },
-    han: { total: 0, lossTotal: 0, lossCount: 0 },
+    cho: { total: 0, lossTotal: 0, lossCount: 0, keyMoves: 0 },
+    han: { total: 0, lossTotal: 0, lossCount: 0, keyMoves: 0 },
   };
   let lossTotal = 0;
   let lossCount = 0;
@@ -25,7 +25,10 @@ export function summarizeReview(results) {
     const key = item.classification?.key ?? 'unclassified';
     counts[key] = (counts[key] ?? 0) + 1;
     const side = sideStats[item.side];
-    if (side) side.total++;
+    if (side) {
+      side.total++;
+      if (['inaccuracy', 'mistake', 'blunder'].includes(key)) side.keyMoves++;
+    }
     if (Number.isFinite(item.analysis?.lossCp)) {
       lossTotal += item.analysis.lossCp;
       lossCount++;
@@ -43,6 +46,7 @@ export function summarizeReview(results) {
     averageLossCp: lossCount ? Math.round(lossTotal / lossCount) : null,
     bySide: Object.fromEntries(Object.entries(sideStats).map(([side, value]) => [side, {
       total: value.total,
+      keyMoves: value.keyMoves,
       averageLossCp: value.lossCount ? Math.round(value.lossTotal / value.lossCount) : null,
     }])),
   };
