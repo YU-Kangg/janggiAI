@@ -652,7 +652,7 @@ func format_review_summary(summary: Dictionary) -> String:
 		int(counts.get("inaccuracy", 0)), int(counts.get("mistake", 0)), int(counts.get("blunder", 0)),
 	]
 	if summary.get("averageLossCp") != null:
-		text += " · 평균 손실 %dcp" % int(summary.averageLossCp)
+		text += " · 비교 가능 %d수 · 평균 손실 %dcp" % [int(summary.get("comparableMoves", 0)), int(summary.averageLossCp)]
 	var by_side: Dictionary = summary.get("bySide", {})
 	for side_key in ["cho", "han"]:
 		var side_summary: Dictionary = by_side.get(side_key, {})

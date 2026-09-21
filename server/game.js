@@ -38,6 +38,7 @@ export function summarizeReview(results) {
   return {
     total: results.length, counts,
     keyMoves: counts.inaccuracy + counts.mistake + counts.blunder,
+    comparableMoves: lossCount,
     averageLossCp: lossCount ? Math.round(lossTotal / lossCount) : null,
     bySide: Object.fromEntries(Object.entries(sideStats).map(([side, value]) => [side, {
       total: value.total,
