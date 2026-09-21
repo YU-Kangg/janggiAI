@@ -74,6 +74,7 @@ func run() -> void:
 	check(app.full_review.jobId == exported_job and app.evaluation_graph.values.size() == 3 and app.review_summary.text.contains("리뷰 요약") and app.message.text.contains("자동 복원"), "review JSON automatic restore")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(app.review_export_path))
 	check(app.review_summary.text.contains("리뷰 요약") and app.review_summary.text.contains("최선") and app.review_summary.text.contains("초 1수") and app.review_summary.text.contains("한 1수"), "classification and side summary display")
+	check(app.review_method_notice.text.contains("실험적 수 등급") and app.review_method_notice.text.contains("ms 기준") and app.review_method_notice.text.contains("보정 전"), "experimental review method notice")
 	check(app.history.get_item_text(1).contains("[최선]"), "history move classification label")
 	check(app.history.get_item_text(1).contains("cp"), "history move evaluation loss")
 	var completed_review_job: int = app.full_review.jobId

@@ -12,6 +12,7 @@ var status := Label.new()
 var message := Label.new()
 var score_panel := Label.new()
 var review_summary := Label.new()
+var review_method_notice := Label.new()
 var key_move_status := Label.new()
 var grid := GridContainer.new()
 var side := OptionButton.new()
@@ -114,6 +115,8 @@ func _ready() -> void:
 	column.add_child(evaluation_graph)
 	review_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(review_summary)
+	review_method_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(review_method_notice)
 	column.add_child(key_move_status)
 	side.add_item("초로 AI 대국")
 	side.add_item("한으로 AI 대국")
@@ -674,6 +677,12 @@ func format_review_summary(summary: Dictionary) -> String:
 			text += "\n%s %d수 · 핵심 %d수 · 평균 손실 %dcp" % ["초" if side_key == "cho" else "한", int(side_summary.get("total", 0)), int(side_summary.get("keyMoves", 0)), int(side_summary.averageLossCp)]
 	return text
 
+func format_review_method_notice() -> String:
+	if full_review.get("status", "") != "complete" or full_review.get("results", []).is_empty():
+		return ""
+	var budget := int(full_review.results[0].get("budgetMs", 0))
+	return "실험적 수 등급 · 서버 엔진 %dms 기준 · 장기 기보 보정 전" % budget
+
 func next_key_ply(after_ply: int) -> int:
 	if full_review.get("status", "") != "complete":
 		return -1
@@ -1149,6 +1158,7 @@ func render_position(state: Dictionary) -> void:
 		if detail != "":
 			review_status_parts.append(detail)
 	key_move_status.text = " · ".join(review_status_parts)
+	review_method_notice.text = format_review_method_notice()
 	review_buttons[0].disabled = pending or self.state.moves.is_empty()
 	review_buttons[1].disabled = pending or view_ply() == 0
 	review_buttons[2].disabled = pending or review.is_empty() or view_ply() >= self.state.moves.size()
