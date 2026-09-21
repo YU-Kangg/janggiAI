@@ -721,6 +721,14 @@ func format_key_move_status(ply: int) -> String:
 		return "핵심 장면 %d/%d" % [current_index + 1, key_plies.size()]
 	return "핵심 장면 %d개" % key_plies.size()
 
+func format_current_review_status(ply: int) -> String:
+	var item := cached_review_result(ply)
+	if item.is_empty():
+		return ""
+	var label := str(item.get("classification", {}).get("label", "분류 제외"))
+	var loss: Variant = item.get("analysis", {}).get("lossCp")
+	return "현재 수 · %s%s" % [label, " · %dcp 손실" % int(loss) if loss != null else " · 손실 비교 제외"]
+
 func next_key_move() -> void:
 	if pending or review.is_empty() or not variation.is_empty():
 		return
@@ -1136,7 +1144,11 @@ func render_position(state: Dictionary) -> void:
 		history.add_item("%d수 · %s %s%s" % [index + 1, "초" if index % 2 == 0 else "한", description, classification_suffix])
 	history.select(view_ply())
 	evaluation_graph.select_ply(view_ply())
-	key_move_status.text = format_key_move_status(view_ply())
+	var review_status_parts: Array[String] = []
+	for detail in [format_key_move_status(view_ply()), format_current_review_status(view_ply())]:
+		if detail != "":
+			review_status_parts.append(detail)
+	key_move_status.text = " · ".join(review_status_parts)
 	review_buttons[0].disabled = pending or self.state.moves.is_empty()
 	review_buttons[1].disabled = pending or view_ply() == 0
 	review_buttons[2].disabled = pending or review.is_empty() or view_ply() >= self.state.moves.size()
