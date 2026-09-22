@@ -35,8 +35,8 @@ func point_for(index: int, maximum: float) -> Vector2:
 	return Vector2(x, y)
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.12, 0.12, 0.12), true)
-	draw_line(Vector2(0, size.y * 0.5), Vector2(size.x, size.y * 0.5), Color(0.45, 0.45, 0.45), 1.0)
+	draw_rect(Rect2(Vector2.ZERO, size), Color("fff5e5"), true)
+	draw_line(Vector2(0, size.y * 0.5), Vector2(size.x, size.y * 0.5), Color("d9bfa8"), 1.0)
 	if values.size() < 2:
 		return
 	var maximum := 100.0
@@ -50,10 +50,10 @@ func _draw() -> void:
 			continue
 		var point := point_for(index, maximum)
 		if previous != null:
-			draw_line(previous, point, Color(0.4, 0.85, 1.0), 3.0, true)
+			draw_line(previous, point, Color("df927d"), 3.0, true)
 		previous = point
 	var marker := point_for(selected_ply, maximum)
-	draw_circle(marker, 6.0, Color(1.0, 0.78, 0.2))
+	draw_circle(marker, 6.0, Color("f3b657"))
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and values.size() > 1:

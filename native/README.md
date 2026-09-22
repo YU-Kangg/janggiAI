@@ -1,7 +1,7 @@
 # Android 기기 엔진 연결 기반
 
 Fairy-Stockfish를 Godot GDExtension 공유 라이브러리로 빌드하는 개발용 기반입니다.
-**앱 추천 버튼과 APK에는 아직 연결하지 않았습니다.** 기본 대국은 기존 서버를 사용합니다.
+Android 로컬 2인 대전의 합법 수 판정과 저장 복원에 연결했습니다. AI 추천과 리뷰는 기존 서버를 사용합니다.
 
 ## 고정 소스와 준비
 
@@ -38,6 +38,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native.ps1 -Ar
 4. 메인 스레드에서 결과의 FEN·요청 당시 revision·현재 합법 수를 확인한 뒤 표시해야 합니다. 자동 착수하지 않습니다.
 5. 취소·장면 변경·백그라운드 전환 시 `cancel()`하고 작업 스레드를 회수합니다. 준비 후 스레드 시작 실패 시에도 예약 해제가 필요하므로 앱 래퍼에서 반드시 처리해야 합니다.
 
+`position(initial_fen, moves)`는 같은 초기 차림과 기보를 재생해 현재 FEN, 차례, 장군 여부, 합법 수와 종료 결과를 반환합니다. Android 로컬 대전은 매 착수와 저장 복원 때 이 API로 기보 전체를 검증합니다.
+
 고정 설정: `janggi`, 1스레드, Hash 16MiB, 최대 300ms·깊이 8, NNUE 비활성화.
 임의 FEN·불법 기보·종료 후 기보는 거부합니다. 앱 통합 시 서버 규칙 버전과의 결과 차이도 검증해야 합니다.
 
@@ -47,4 +49,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native.ps1 -Ar
 godot-cpp는 MIT(`LICENSE.md`)입니다. APK에 포함하는 단계에서 라이선스 고지와 정확한 대응 소스·빌드 자료 제공도 함께 연결합니다.
 
 알려진 기술 검토 항목은 [NATIVE_ENGINE_NOTES.md](NATIVE_ENGINE_NOTES.md)에 기록합니다.
-NNUE와 완전 오프라인 대국은 후속 범위입니다.
+NNUE와 오프라인 AI 대전·리뷰는 후속 범위입니다.

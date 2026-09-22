@@ -2,6 +2,7 @@ extends Control
 
 const LocalEngine = preload("res://local_engine.gd")
 const EvaluationGraph = preload("res://evaluation_graph.gd")
+const SETUPS := ["nbbn", "bnbn", "nbnb", "bnnb"]
 
 var state: Dictionary = {}
 var selected := ""
@@ -30,6 +31,15 @@ var local_setup_summary := Label.new()
 var setup_dialog := ConfirmationDialog.new()
 var selected_cho_setup := "nbbn"
 var selected_han_setup := "nbbn"
+var offline_local := false
+var offline_native: Object
+var offline_moves: Array[String] = []
+var offline_adjudication: Dictionary = {}
+var offline_time_control: Variant = null
+var offline_clock := {"cho": 0, "han": 0}
+var offline_clock_started := 0
+var offline_save_path := "user://local-match.json"
+var pending_ai_start_after_connect := false
 var pending_new_mode := "ai"
 var resign_button := Button.new()
 var draw_button := Button.new()
@@ -115,13 +125,69 @@ func add_section_title(parent: Control, caption: String) -> void:
 	var label := Label.new()
 	label.text = caption
 	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", Color("7a5448"))
 	parent.add_child(label)
 
+func cream_box(background: Color, border := Color("ead6c5"), radius := 14, border_width := 1) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = background
+	box.border_color = border
+	box.set_border_width_all(border_width)
+	box.set_corner_radius_all(radius)
+	box.content_margin_left = 14
+	box.content_margin_right = 14
+	box.content_margin_top = 10
+	box.content_margin_bottom = 10
+	return box
+
+func create_app_theme() -> Theme:
+	var app_theme := Theme.new()
+	app_theme.default_font_size = 16
+	app_theme.set_color("font_color", "Label", Color("62483f"))
+	app_theme.set_color("font_color", "Button", Color("684a40"))
+	app_theme.set_color("font_hover_color", "Button", Color("5b4038"))
+	app_theme.set_color("font_pressed_color", "Button", Color("5b4038"))
+	app_theme.set_color("font_focus_color", "Button", Color("5b4038"))
+	app_theme.set_color("font_disabled_color", "Button", Color("aa948a"))
+	app_theme.set_stylebox("normal", "Button", cream_box(Color("fff2dd")))
+	app_theme.set_stylebox("hover", "Button", cream_box(Color("ffe7c2"), Color("e6bd91"), 14, 2))
+	app_theme.set_stylebox("pressed", "Button", cream_box(Color("ffd9ab"), Color("dca876"), 14, 2))
+	app_theme.set_stylebox("disabled", "Button", cream_box(Color("f4eadf"), Color("eadfd5")))
+	for control_type in ["OptionButton", "LineEdit"]:
+		app_theme.set_color("font_color", control_type, Color("62483f"))
+		app_theme.set_color("font_placeholder_color", control_type, Color("aa8e82"))
+		app_theme.set_stylebox("normal", control_type, cream_box(Color("fffaf2")))
+		app_theme.set_stylebox("focus", control_type, cream_box(Color("fffdf8"), Color("e7b985"), 14, 2))
+	app_theme.set_stylebox("panel", "TabContainer", cream_box(Color("fffaf2"), Color("edd8c4"), 16, 1))
+	app_theme.set_stylebox("tab_selected", "TabContainer", cream_box(Color("ffdcae"), Color("e5b77f"), 12, 1))
+	app_theme.set_stylebox("tab_unselected", "TabContainer", cream_box(Color("f9eddf"), Color("ead8c7"), 12, 1))
+	app_theme.set_color("font_selected_color", "TabContainer", Color("6b493d"))
+	app_theme.set_color("font_unselected_color", "TabContainer", Color("92786d"))
+	app_theme.set_stylebox("panel", "PopupPanel", cream_box(Color("fffaf2"), Color("e6cbb2"), 18, 2))
+	for dialog_type in ["Window", "AcceptDialog", "ConfirmationDialog"]:
+		app_theme.set_stylebox("panel", dialog_type, cream_box(Color("fffaf2"), Color("e6cbb2"), 18, 2))
+		app_theme.set_color("title_color", dialog_type, Color("684a40"))
+	return app_theme
+
+func board_box(background: Color) -> StyleBoxFlat:
+	var box := cream_box(background, Color("e3cdb8"), 8, 1)
+	box.content_margin_left = 2
+	box.content_margin_right = 2
+	box.content_margin_top = 2
+	box.content_margin_bottom = 2
+	return box
+
 func _ready() -> void:
+	theme = create_app_theme()
+	var background := ColorRect.new()
+	background.color = Color("fff7e8")
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(background)
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for edge in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + edge, 12)
+		margin.add_theme_constant_override("margin_" + edge, 14)
 	add_child(margin)
 	page_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	page_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
@@ -129,11 +195,13 @@ func _ready() -> void:
 	page_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	margin.add_child(page_scroll)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 8)
+	column.add_theme_constant_override("separation", 10)
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	page_scroll.add_child(column)
 	var title := Label.new()
-	title.text = "고양이 장기 · 플레이 시제품"
+	title.text = "고양이 장기 · 냥이들의 한판"
+	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_color_override("font_color", Color("845847"))
 	column.add_child(title)
 	endpoint.text = "http://127.0.0.1:3000"
 	for arg in OS.get_cmdline_user_args():
@@ -380,13 +448,24 @@ func _ready() -> void:
 	review_file_controls.add_child(review_import_button)
 	review_archive_workspace.add_child(review_file_controls)
 	new_game_dialog.confirmed.connect(confirm_new_game)
+	new_game_dialog.get_ok_button().text = "시작"
+	new_game_dialog.get_cancel_button().text = "취소"
 	add_child(new_game_dialog)
-	setup_dialog.title = "기물 배치 선택"
-	setup_dialog.dialog_text = "초와 한의 마·상 배치를 선택하세요."
+	setup_dialog.title = ""
+	setup_dialog.dialog_text = ""
 	setup_dialog.confirmed.connect(apply_setup_selection)
+	setup_dialog.get_ok_button().text = "적용"
+	setup_dialog.get_cancel_button().text = "취소"
 	var setup_form := VBoxContainer.new()
-	setup_form.position = Vector2(24, 90)
-	setup_form.custom_minimum_size = Vector2(620, 260)
+	setup_form.position = Vector2(20, 34)
+	setup_form.custom_minimum_size = Vector2(440, 255)
+	var setup_heading := Label.new()
+	setup_heading.text = "기물 배치 선택"
+	setup_heading.add_theme_font_size_override("font_size", 20)
+	setup_form.add_child(setup_heading)
+	var setup_hint := Label.new()
+	setup_hint.text = "초와 한의 마·상 배치를 선택하세요."
+	setup_form.add_child(setup_hint)
 	var setup_cho_label := Label.new()
 	setup_cho_label.text = "초 차림"
 	setup_form.add_child(setup_cho_label)
@@ -411,13 +490,14 @@ func _ready() -> void:
 	add_child(timer)
 	timer.start()
 	render_board()
-	request_state()
+	if not load_offline_local():
+		request_state()
 
 func arrangement_value(index: int) -> String:
-	return ["nbbn", "bnbn", "nbnb", "bnnb"][clampi(index, 0, 3)]
+	return SETUPS[clampi(index, 0, 3)]
 
 func arrangement_index(value: String) -> int:
-	return maxi(["nbbn", "bnbn", "nbnb", "bnnb"].find(value), 0)
+	return maxi(SETUPS.find(value), 0)
 
 func arrangement_label(value: String) -> String:
 	return ["마상상마", "상마마상", "마상마상", "상마상마"][arrangement_index(value)]
@@ -430,7 +510,7 @@ func update_setup_summaries() -> void:
 func open_setup_dialog() -> void:
 	cho_setup.select(arrangement_index(selected_cho_setup))
 	han_setup.select(arrangement_index(selected_han_setup))
-	setup_dialog.popup_centered(Vector2i(700, 520))
+	setup_dialog.popup_centered(Vector2i(500, 410))
 
 func apply_setup_selection() -> void:
 	selected_cho_setup = arrangement_value(cho_setup.selected)
@@ -468,6 +548,135 @@ func selected_time_control() -> Variant:
 		_:
 			return null
 
+func local_initial_fen(setup: Dictionary) -> String:
+	var han: String = str(setup.get("han", "nbbn"))
+	var cho: String = str(setup.get("cho", "nbbn")).to_upper()
+	return "r%sa1a%sr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/R%sA1A%sR w - - 0 1" % [han.left(2), han.right(2), cho.left(2), cho.right(2)]
+
+func material_points(fen: String) -> Dictionary:
+	var values := {"r": 13.0, "c": 7.0, "n": 5.0, "b": 3.0, "a": 3.0, "p": 2.0, "k": 0.0}
+	var points := {"cho": 0.0, "han": 1.5, "hanBonus": 1.5}
+	for token in fen.split(" ")[0]:
+		var lower := str(token).to_lower()
+		if values.has(lower):
+			points["cho" if str(token) == str(token).to_upper() else "han"] += float(values[lower])
+	return points
+
+func native_local_position(initial_fen: String, moves: Array[String]) -> Dictionary:
+	if not ClassDB.class_exists("JanggiNative"):
+		return {"error": "이 기기에는 로컬 장기 규칙이 없습니다."}
+	if offline_native == null:
+		offline_native = ClassDB.instantiate("JanggiNative")
+	return offline_native.position(initial_fen, PackedStringArray(moves))
+
+func refresh_offline_state(increment_revision := false) -> bool:
+	var setup := {"cho": selected_cho_setup, "han": selected_han_setup}
+	var initial_fen := local_initial_fen(setup)
+	var position := native_local_position(initial_fen, offline_moves)
+	if position.has("error"):
+		message.text = "로컬 대국 복원 실패: %s" % str(position.error)
+		return false
+	var revision := int(state.get("revision", 0)) + (1 if increment_revision else 0)
+	var outcome: Dictionary = offline_adjudication if not offline_adjudication.is_empty() else position.outcome
+	state = {
+		"fen": position.fen, "turn": position.turn, "inCheck": position.inCheck,
+		"bikjang": position.get("bikjang", false), "legalMoves": Array(position.legalMoves),
+		"points": material_points(str(position.fen)), "outcome": outcome,
+		"initialFen": initial_fen, "setup": setup, "moves": offline_moves.duplicate(),
+		"revision": revision, "variant": "janggi", "mode": "local", "humanSide": "cho",
+		"players": {"cho": cho_name.text.strip_edges(), "han": han_name.text.strip_edges()},
+		"clock": {
+			"enabled": offline_time_control != null, "choMs": int(offline_clock.cho), "hanMs": int(offline_clock.han),
+			"active": null if outcome.over or offline_time_control == null else position.turn,
+			"initialMs": 0 if offline_time_control == null else int(offline_time_control.initialMs),
+			"incrementMs": 0 if offline_time_control == null else int(offline_time_control.incrementMs),
+		},
+		"canUndo": not offline_moves.is_empty(), "ai": {"status": "idle", "error": null},
+	}
+	return true
+
+func save_offline_local() -> void:
+	if not offline_local or state.is_empty():
+		return
+	var file := FileAccess.open(offline_save_path, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify({
+			"version": 1, "setup": state.setup, "moves": offline_moves,
+			"players": state.players, "timeControl": offline_time_control,
+			"clock": offline_clock, "adjudication": offline_adjudication,
+		}))
+		print("OFFLINE_LOCAL_SAVED moves=%d" % offline_moves.size())
+
+func load_offline_local() -> bool:
+	if not ClassDB.class_exists("JanggiNative") or not FileAccess.file_exists(offline_save_path):
+		return false
+	var payload = JSON.parse_string(FileAccess.get_file_as_string(offline_save_path))
+	if not payload is Dictionary or int(payload.get("version", 0)) != 1:
+		return false
+	var saved_setup = payload.get("setup", {})
+	var saved_players = payload.get("players", {})
+	var saved_clock = payload.get("clock", {})
+	var saved_moves = payload.get("moves", [])
+	var saved_adjudication = payload.get("adjudication", {})
+	if not saved_setup is Dictionary or not saved_players is Dictionary or not saved_clock is Dictionary or not saved_moves is Array or not saved_adjudication is Dictionary:
+		return false
+	selected_cho_setup = str(saved_setup.get("cho", "nbbn"))
+	selected_han_setup = str(saved_setup.get("han", "nbbn"))
+	if selected_cho_setup not in SETUPS or selected_han_setup not in SETUPS:
+		return false
+	offline_moves.assign(payload.get("moves", []))
+	offline_adjudication = saved_adjudication.duplicate(true)
+	offline_time_control = payload.get("timeControl")
+	if offline_time_control != null and (not offline_time_control is Dictionary or not offline_time_control.has("initialMs") or not offline_time_control.has("incrementMs")):
+		return false
+	if not saved_clock.has("cho") or not saved_clock.has("han"):
+		return false
+	offline_clock = saved_clock.duplicate(true)
+	cho_name.text = str(saved_players.get("cho", "초"))
+	han_name.text = str(saved_players.get("han", "한"))
+	offline_local = true
+	offline_clock_started = Time.get_ticks_msec()
+	if not refresh_offline_state(true):
+		offline_local = false
+		return false
+	sync_new_game_controls()
+	message.text = "기기에 저장된 로컬 대국을 복원했습니다."
+	print("OFFLINE_LOCAL_RESTORED moves=%d" % offline_moves.size())
+	render_board()
+	return true
+
+func start_offline_local() -> void:
+	offline_local = true
+	offline_moves = []
+	offline_adjudication = {}
+	var selected_control = selected_time_control()
+	offline_time_control = null if selected_control == null else {
+		"initialMs": int(selected_control.initialSeconds) * 1000,
+		"incrementMs": int(selected_control.incrementSeconds) * 1000,
+	}
+	var initial_ms := 0 if offline_time_control == null else int(offline_time_control.initialMs)
+	offline_clock = {"cho": initial_ms, "han": initial_ms}
+	offline_clock_started = Time.get_ticks_msec()
+	state = {"revision": int(state.get("revision", 0))}
+	if refresh_offline_state(true):
+		save_offline_local()
+		message.text = "오프라인 로컬 대국을 시작했습니다."
+		print("OFFLINE_LOCAL_STARTED")
+		render_board()
+
+func sync_offline_clock() -> void:
+	if not offline_local or offline_time_control == null or state.is_empty() or state.outcome.over:
+		return
+	var now := Time.get_ticks_msec()
+	var side_key: String = str(state.turn)
+	offline_clock[side_key] = maxi(0, int(offline_clock[side_key]) - maxi(0, now - offline_clock_started))
+	offline_clock_started = now
+	if int(offline_clock[side_key]) == 0:
+		var winner := "han" if side_key == "cho" else "cho"
+		offline_adjudication = {"over": true, "result": "0-1" if winner == "han" else "1-0", "winner": winner, "reason": "시간패"}
+		refresh_offline_state(true)
+		save_offline_local()
+
 func open_new_game_dialog(mode: String) -> void:
 	pending_new_mode = mode
 	game_mode_tabs.current_tab = 1 if mode == "local" else 0
@@ -475,6 +684,18 @@ func open_new_game_dialog(mode: String) -> void:
 	new_game_dialog.popup_centered()
 
 func confirm_new_game() -> void:
+	if pending_new_mode == "local" and ClassDB.class_exists("JanggiNative"):
+		start_offline_local()
+		return
+	if pending_new_mode == "ai" and offline_local:
+		offline_local = false
+		offline_native = null
+		if FileAccess.file_exists(offline_save_path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(offline_save_path))
+		pending_ai_start_after_connect = true
+		state = {}
+		request_state()
+		return
 	act("reset", {
 		"mode": pending_new_mode,
 		"humanSide": "cho" if side.selected == 0 else "han",
@@ -489,6 +710,10 @@ func _exit_tree() -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED:
 		cancel_device_recommendation()
+		sync_offline_clock()
+		save_offline_local()
+	elif what == NOTIFICATION_APPLICATION_RESUMED and offline_local:
+		offline_clock_started = Time.get_ticks_msec()
 
 func add_action(parent: Node, caption: String, callback: Callable) -> void:
 	var button := Button.new()
@@ -499,6 +724,11 @@ func add_action(parent: Node, caption: String, callback: Callable) -> void:
 	action_buttons.append(button)
 
 func request_state() -> void:
+	if offline_local:
+		sync_offline_clock()
+		refresh_offline_state(false)
+		render_board()
+		return
 	if not pending:
 		if full_review.get("status", "") == "running":
 			send("review-status", {"revision": state.revision, "jobId": full_review.jobId})
@@ -622,6 +852,15 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		message.text = ""
 	if changed or current_path != "game":
 		render_board()
+	if pending_ai_start_after_connect:
+		pending_ai_start_after_connect = false
+		act("reset", {
+			"mode": "ai", "humanSide": "cho" if side.selected == 0 else "han",
+			"setup": {"cho": selected_cho_setup, "han": selected_han_setup},
+			"players": {"cho": cho_name.text.strip_edges(), "han": han_name.text.strip_edges()},
+			"timeControl": null,
+		})
+		return
 	if review_restore_revision != int(state.revision):
 		review_restore_revision = int(state.revision)
 		send("review-latest", {"revision": state.revision})
@@ -629,9 +868,47 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 func act(action: String, data: Dictionary = {}) -> void:
 	if state.is_empty() or pending or not review.is_empty():
 		return
+	if offline_local:
+		act_offline_local(action, data)
+		return
 	cancel_device_recommendation(false)
 	data["revision"] = state.revision
 	send(action, data)
+
+func act_offline_local(action: String, data: Dictionary = {}) -> void:
+	sync_offline_clock()
+	if state.outcome.over and action == "move":
+		message.text = "종료된 대국입니다."
+		return
+	if action == "move":
+		var move := str(data.get("move", ""))
+		if not state.legalMoves.has(move):
+			message.text = "둘 수 없는 수입니다."
+			return
+		var mover: String = str(state.turn)
+		offline_moves.append(move)
+		if offline_time_control != null:
+			offline_clock[mover] = int(offline_clock[mover]) + int(offline_time_control.incrementMs)
+		offline_adjudication = {}
+	elif action == "undo":
+		if offline_moves.is_empty():
+			return
+		offline_moves.pop_back()
+		offline_adjudication = {}
+	elif action == "resign":
+		var loser: String = str(data.get("side", state.turn))
+		var winner := "han" if loser == "cho" else "cho"
+		offline_adjudication = {"over": true, "result": "0-1" if winner == "han" else "1-0", "winner": winner, "reason": "기권"}
+	elif action == "draw":
+		offline_adjudication = {"over": true, "result": "1/2-1/2", "winner": null, "reason": "합의 무승부"}
+	else:
+		message.text = "오프라인 로컬 대국에서 지원하지 않는 동작입니다."
+		return
+	offline_clock_started = Time.get_ticks_msec()
+	if refresh_offline_state(true):
+		selected = ""
+		save_offline_local()
+		render_board()
 
 func start_full_review() -> void:
 	if pending or state.is_empty() or state.moves.is_empty() or full_review.get("status", "") == "running":
@@ -1328,29 +1605,33 @@ func render_position(state: Dictionary) -> void:
 			button.custom_minimum_size = Vector2(40, 42)
 			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			button.size_flags_vertical = Control.SIZE_EXPAND_FILL
-			button.modulate = Color(0.55, 0.8, 1) if piece != "" and piece == piece.to_upper() else Color(1, 0.7, 0.65)
+			var square_color := Color("fff9ed") if (row + file) % 2 == 0 else Color("f7e6cf")
+			button.add_theme_stylebox_override("normal", board_box(square_color))
+			button.add_theme_stylebox_override("disabled", board_box(square_color.darkened(0.03)))
+			button.add_theme_color_override("font_color", Color("5687a0") if piece != "" and piece == piece.to_upper() else Color("c8796d") if piece != "" else Color("ccb8a6"))
+			button.add_theme_color_override("font_disabled_color", Color("6f9aaf") if piece != "" and piece == piece.to_upper() else Color("ce8b81") if piece != "" else Color("cfbdad"))
 			if square == selected or (selected != "" and state.legalMoves.has(selected + square)):
-				button.modulate = Color(0.7, 1, 0.5)
+				button.modulate = Color("c8efa9")
 			var recommendation := split_move(recommended_move)
 			if recommendation.size() == 2 and square == recommendation[0]:
-				button.modulate = Color(1, 0.85, 0.35)
+				button.modulate = Color("ffd97b")
 			elif recommendation.size() == 2 and square == recommendation[1]:
-				button.modulate = Color(0.45, 1, 0.65)
+				button.modulate = Color("9ee3b5")
 			var review_recommendation := split_move(analysis_move)
 			if review_recommendation.size() == 2 and square == review_recommendation[0]:
-				button.modulate = Color(1, 0.78, 0.2)
+				button.modulate = Color("ffd27a")
 			elif review_recommendation.size() == 2 and analysis_stage == 2 and square == review_recommendation[1]:
-				button.modulate = Color(0.35, 1, 0.55)
+				button.modulate = Color("94ddb0")
 			var playback_highlight := split_move(playback_move)
 			if analysis_move == "" and playback_highlight.size() == 2 and square == playback_highlight[0]:
-				button.modulate = Color(1, 0.78, 0.2)
+				button.modulate = Color("ffd27a")
 			elif analysis_move == "" and playback_highlight.size() == 2 and square == playback_highlight[1]:
-				button.modulate = Color(0.35, 1, 0.55)
+				button.modulate = Color("94ddb0")
 			var retry_hint := split_move(retry_expected_move)
 			if retry_mode and retry_hint.size() == 2 and retry_hint_stage >= 1 and square == retry_hint[0]:
-				button.modulate = Color(1, 0.78, 0.2)
+				button.modulate = Color("ffd27a")
 			elif retry_mode and retry_hint.size() == 2 and retry_hint_stage >= 2 and square == retry_hint[1]:
-				button.modulate = Color(0.35, 1, 0.55)
+				button.modulate = Color("94ddb0")
 			button.disabled = (not review.is_empty() and variation.is_empty()) or (pending and current_path != "game") or ai_turn or state.outcome.over
 			button.pressed.connect(choose.bind(square, piece))
 			grid.add_child(button)

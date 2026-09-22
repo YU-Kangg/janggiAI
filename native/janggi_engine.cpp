@@ -71,6 +71,7 @@ protected:
         ClassDB::bind_method(D_METHOD("abandon"), &JanggiNative::abandon);
         ClassDB::bind_method(D_METHOD("cancel"), &JanggiNative::cancel);
         ClassDB::bind_method(D_METHOD("analyze", "initial_fen", "moves"), &JanggiNative::analyze);
+        ClassDB::bind_method(D_METHOD("position", "initial_fen", "moves"), &JanggiNative::position);
     }
 public:
     bool prepare() {
@@ -81,6 +82,54 @@ public:
     }
     void abandon() { reserved = false; }
     void cancel() { cancelled = true; SF::Threads.stop = true; }
+    Dictionary position(String initial_fen, PackedStringArray moves) {
+        std::lock_guard<std::mutex> lock(engine_mutex);
+        Dictionary result;
+        auto error = [&](const char *text) { result["error"] = text; return result; };
+        const std::string fen = initial_fen.utf8().get_data();
+        if (!valid_start(fen) || moves.size() > 4096) return error("Invalid initial position or move count");
+        initialize_engine();
+        SF::StateListPtr states(new std::deque<SF::StateInfo>(1));
+        SF::Position pos;
+        pos.set(SF::variants.find("janggi")->second, fen, false, &states->back(), SF::Threads.main());
+        for (int i = 0; i < moves.size(); ++i) {
+            SF::Value outcome;
+            if (pos.is_game_end(outcome)) return error("Moves after game end");
+            std::string move_text = moves[i].utf8().get_data();
+            const SF::Move move = SF::UCI::to_move(pos, move_text);
+            if (move == SF::MOVE_NONE) return error("Illegal move history");
+            states->emplace_back(); pos.do_move(move, states->back());
+        }
+        PackedStringArray legal;
+        for (const auto &move : SF::MoveList<SF::LEGAL>(pos)) legal.append(String(SF::UCI::move(pos, move).c_str()));
+        SF::Value outcome = SF::VALUE_DRAW;
+        const bool over = pos.is_game_end(outcome) || legal.is_empty();
+        const bool cho_turn = pos.side_to_move() == SF::WHITE;
+        Dictionary ending;
+        ending["over"] = over;
+        ending["result"] = "*";
+        ending["winner"] = Variant();
+        ending["reason"] = Variant();
+        if (over) {
+            if (outcome == SF::VALUE_DRAW) {
+                ending["result"] = "1/2-1/2";
+                ending["reason"] = "무승부";
+            } else {
+                const bool current_wins = outcome > SF::VALUE_DRAW;
+                const bool cho_wins = current_wins == cho_turn;
+                ending["result"] = cho_wins ? "1-0" : "0-1";
+                ending["winner"] = cho_wins ? "cho" : "han";
+                ending["reason"] = "규칙 종료";
+            }
+        }
+        result["fen"] = String(pos.fen().c_str());
+        result["turn"] = cho_turn ? "cho" : "han";
+        result["inCheck"] = bool(pos.checkers());
+        result["bikjang"] = false;
+        result["legalMoves"] = legal;
+        result["outcome"] = ending;
+        return result;
+    }
     Dictionary analyze(String initial_fen, PackedStringArray moves) {
         std::lock_guard<std::mutex> lock(engine_mutex);
         struct Release { ~Release() { reserved = false; } } release;
