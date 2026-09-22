@@ -225,6 +225,31 @@ func run() -> void:
 		await wait_idle()
 	check(app.state.moves.size() == 1 and app.state.turn == "han", "AI opening for human Han")
 	check(app.grid.get_child(0).tooltip_text == "i1", "Han board orientation")
+	app.cho_setup.select(3)
+	app.han_setup.select(2)
+	app.cho_name.text = "춘향"
+	app.han_name.text = "몽룡"
+	app.time_control.select(2)
+	app.pending_new_mode = "local"
+	app.confirm_new_game()
+	await wait_idle()
+	check(app.state.mode == "local" and app.state.setup.cho == "bnnb" and app.state.setup.han == "nbnb" and app.state.players.cho == "춘향", "local match setup")
+	check(app.state.clock.enabled and app.state.clock.initialMs == 600000 and app.state.clock.incrementMs == 5000, "local match clock setup")
+	check(app.local_match_active() and app.history.disabled and app.device_recommend.disabled and app.full_review_start.disabled, "local match analysis lock")
+	app.squares["a4"].pressed.emit()
+	app.squares["b4"].pressed.emit()
+	await wait_idle()
+	check(app.state.moves == ["a4b4"] and app.state.turn == "han", "local alternating move")
+	app.act("resign", {"side": "han"})
+	await wait_idle()
+	check(app.state.outcome.over and app.state.outcome.winner == "cho" and app.state.outcome.reason == "기권", "local resignation")
+	check(not app.rematch_button.disabled and app.status.text.contains("춘향(초) 승리"), "local rematch and winner status")
+	app.pending_new_mode = "local"
+	app.confirm_new_game()
+	await wait_idle()
+	app.act("draw")
+	await wait_idle()
+	check(app.state.outcome.over and app.state.outcome.winner == null and app.state.outcome.reason == "합의 무승부", "local agreed draw")
 	app.endpoint.text = "http://127.0.0.1:1"
 	app.request_state()
 	await wait_idle()

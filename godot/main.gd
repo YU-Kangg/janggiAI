@@ -16,6 +16,18 @@ var review_method_notice := Label.new()
 var key_move_status := Label.new()
 var grid := GridContainer.new()
 var side := OptionButton.new()
+var cho_setup := OptionButton.new()
+var han_setup := OptionButton.new()
+var time_control := OptionButton.new()
+var cho_name := LineEdit.new()
+var han_name := LineEdit.new()
+var clock_panel := Label.new()
+var pending_new_mode := "ai"
+var resign_button := Button.new()
+var draw_button := Button.new()
+var rematch_button := Button.new()
+var resign_dialog := ConfirmationDialog.new()
+var draw_dialog := ConfirmationDialog.new()
 var action_buttons: Array[Button] = []
 var squares: Dictionary = {}
 var timer := Timer.new()
@@ -121,16 +133,63 @@ func _ready() -> void:
 	side.add_item("초로 AI 대국")
 	side.add_item("한으로 AI 대국")
 	column.add_child(side)
+	cho_name.placeholder_text = "초 대국자 이름"
+	cho_name.text = "초"
+	han_name.placeholder_text = "한 대국자 이름"
+	han_name.text = "한"
+	column.add_child(cho_name)
+	column.add_child(han_name)
+	var cho_setup_label := Label.new()
+	cho_setup_label.text = "초 차림"
+	column.add_child(cho_setup_label)
+	for option in [cho_setup, han_setup]:
+		option.add_item("마상상마")
+		option.add_item("상마마상")
+		option.add_item("마상마상")
+		option.add_item("상마상마")
+	cho_setup.select(0)
+	han_setup.select(0)
+	cho_setup.tooltip_text = "초 차림"
+	han_setup.tooltip_text = "한 차림"
+	column.add_child(cho_setup)
+	var han_setup_label := Label.new()
+	han_setup_label.text = "한 차림"
+	column.add_child(han_setup_label)
+	column.add_child(han_setup)
+	time_control.add_item("시간 제한 없음")
+	time_control.add_item("5분")
+	time_control.add_item("10분 + 5초")
+	time_control.add_item("30분")
+	column.add_child(time_control)
+	clock_panel.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(clock_panel)
 	grid.columns = 9
 	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	column.add_child(grid)
 	var actions := HFlowContainer.new()
 	column.add_child(actions)
-	add_action(actions, "새 AI 대국", func(): new_game_dialog.popup_centered())
+	add_action(actions, "새 AI 대국", func(): open_new_game_dialog("ai"))
+	var local_game_button := Button.new()
+	local_game_button.text = "새 로컬 대국"
+	local_game_button.custom_minimum_size.y = 44
+	local_game_button.pressed.connect(func(): open_new_game_dialog("local"))
+	actions.add_child(local_game_button)
 	add_action(actions, "한수쉼", pass_turn)
 	add_action(actions, "무르기", func(): act("undo"))
 	add_action(actions, "AI 취소", func(): act("cancel-ai"))
 	add_action(actions, "AI 재개", func(): act("resume-ai"))
+	resign_button.text = "기권"
+	resign_button.custom_minimum_size.y = 44
+	resign_button.pressed.connect(func(): resign_dialog.popup_centered())
+	actions.add_child(resign_button)
+	draw_button.text = "합의 무승부"
+	draw_button.custom_minimum_size.y = 44
+	draw_button.pressed.connect(func(): draw_dialog.popup_centered())
+	actions.add_child(draw_button)
+	rematch_button.text = "같은 설정 재대국"
+	rematch_button.custom_minimum_size.y = 44
+	rematch_button.pressed.connect(func(): open_new_game_dialog(str(state.get("mode", "local"))))
+	actions.add_child(rematch_button)
 	device_recommend.text = "기기 추천"
 	device_recommend.custom_minimum_size.y = 44
 	device_recommend.pressed.connect(start_device_recommendation)
@@ -246,9 +305,14 @@ func _ready() -> void:
 	navigation.add_child(playback_speed)
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(message)
-	new_game_dialog.dialog_text = "공유 중인 현재 대국을 지우고 새 AI 대국을 시작할까요?"
-	new_game_dialog.confirmed.connect(func(): act("reset", {"mode": "ai", "humanSide": "cho" if side.selected == 0 else "han"}))
+	new_game_dialog.confirmed.connect(confirm_new_game)
 	add_child(new_game_dialog)
+	resign_dialog.dialog_text = "현재 차례 진영이 기권할까요?"
+	resign_dialog.confirmed.connect(func(): act("resign", {"side": state.get("turn", "cho")}))
+	add_child(resign_dialog)
+	draw_dialog.dialog_text = "양쪽이 합의한 무승부로 대국을 종료할까요?"
+	draw_dialog.confirmed.connect(func(): act("draw"))
+	add_child(draw_dialog)
 	api.timeout = 8.0
 	api.request_completed.connect(on_response)
 	add_child(api)
@@ -258,6 +322,54 @@ func _ready() -> void:
 	timer.start()
 	render_board()
 	request_state()
+
+func arrangement_value(index: int) -> String:
+	return ["nbbn", "bnbn", "nbnb", "bnnb"][clampi(index, 0, 3)]
+
+func arrangement_index(value: String) -> int:
+	return maxi(["nbbn", "bnbn", "nbnb", "bnnb"].find(value), 0)
+
+func sync_new_game_controls() -> void:
+	if state.is_empty():
+		return
+	cho_setup.select(arrangement_index(str(state.get("setup", {}).get("cho", "nbbn"))))
+	han_setup.select(arrangement_index(str(state.get("setup", {}).get("han", "nbbn"))))
+	cho_name.text = str(state.get("players", {}).get("cho", "초"))
+	han_name.text = str(state.get("players", {}).get("han", "한"))
+	var clock: Dictionary = state.get("clock", {})
+	if not clock.get("enabled", false):
+		time_control.select(0)
+	elif int(clock.get("initialMs", 0)) == 300000:
+		time_control.select(1)
+	elif int(clock.get("initialMs", 0)) == 600000 and int(clock.get("incrementMs", 0)) == 5000:
+		time_control.select(2)
+	else:
+		time_control.select(3)
+
+func selected_time_control() -> Variant:
+	match time_control.selected:
+		1:
+			return {"initialSeconds": 300, "incrementSeconds": 0}
+		2:
+			return {"initialSeconds": 600, "incrementSeconds": 5}
+		3:
+			return {"initialSeconds": 1800, "incrementSeconds": 0}
+		_:
+			return null
+
+func open_new_game_dialog(mode: String) -> void:
+	pending_new_mode = mode
+	new_game_dialog.dialog_text = "현재 대국을 지우고 새 %s 대국을 시작할까요?" % ("로컬" if mode == "local" else "AI")
+	new_game_dialog.popup_centered()
+
+func confirm_new_game() -> void:
+	act("reset", {
+		"mode": pending_new_mode,
+		"humanSide": "cho" if side.selected == 0 else "han",
+		"setup": {"cho": arrangement_value(cho_setup.selected), "han": arrangement_value(han_setup.selected)},
+		"players": {"cho": cho_name.text.strip_edges(), "han": han_name.text.strip_edges()},
+		"timeControl": selected_time_control() if pending_new_mode == "local" else null,
+	})
 
 func _exit_tree() -> void:
 	device_engine.shutdown()
@@ -380,6 +492,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 	var changed: bool = state.is_empty() or payload.revision != state.revision or payload.fen != state.fen
 	state = payload
 	if changed:
+		sync_new_game_controls()
 		cancel_device_recommendation(false)
 		review = {}
 		clear_review_analysis()
@@ -426,6 +539,10 @@ func export_full_review(notify_user := true) -> bool:
 			"initialFen": state.initialFen,
 			"setup": state.setup,
 			"moves": state.moves,
+			"mode": state.get("mode", "practice"),
+			"players": state.get("players", {"cho": "초", "han": "한"}),
+			"outcome": state.get("outcome", {}),
+			"clock": state.get("clock", {}),
 		},
 		"review": full_review,
 	}
@@ -1038,17 +1155,28 @@ func render_board() -> void:
 	var position: Dictionary = variation if not variation.is_empty() else (analysis_preview if not analysis_preview.is_empty() else (state if review.is_empty() else review))
 	render_position(position)
 
+func local_match_active() -> bool:
+	return not state.is_empty() and state.get("mode", "") == "local" and not state.get("outcome", {}).get("over", false)
+
+func format_clock(milliseconds: int) -> String:
+	var total_seconds := maxi(milliseconds, 0) / 1000
+	return "%02d:%02d" % [int(total_seconds / 60), int(total_seconds) % 60]
+
 func render_position(state: Dictionary) -> void:
-	history.disabled = pending or self.state.is_empty()
+	history.disabled = local_match_active() or pending or self.state.is_empty()
 	for button in review_buttons:
 		button.disabled = pending or self.state.is_empty()
 	review_analysis_button.disabled = pending or review.is_empty() or view_ply() < 1
 	if state.is_empty():
 		score_panel.text = ""
+		clock_panel.text = ""
 		for button in action_buttons:
 			button.disabled = true
 		device_recommend.disabled = true
 		device_cancel.disabled = true
+		resign_button.disabled = true
+		draw_button.disabled = true
+		rematch_button.disabled = true
 		return
 	for child in grid.get_children():
 		grid.remove_child(child)
@@ -1104,13 +1232,23 @@ func render_position(state: Dictionary) -> void:
 			button.pressed.connect(choose.bind(square, piece))
 			grid.add_child(button)
 			squares[square] = button
-	status.text = "%s 차례 · %d수 · AI %s" % ["초" if state.turn == "cho" else "한", state.moves.size(), state.ai.status]
+	var players: Dictionary = state.get("players", {"cho": "초", "han": "한"})
+	status.text = "%s(%s) 차례 · %d수" % [str(players.get(state.turn, state.turn)), "초" if state.turn == "cho" else "한", state.moves.size()]
+	status.text += " · 로컬 대국" if state.get("mode", "") == "local" else " · AI %s" % str(state.ai.status)
 	if state.inCheck:
 		status.text += " · 장군"
 	if state.outcome.over:
-		status.text = "대국 종료: %s · %s" % [state.outcome.result, state.outcome.reason]
+		var result_text := "무승부" if state.outcome.get("winner") == null else "%s(%s) 승리" % [str(players.get(state.outcome.winner, state.outcome.winner)), "초" if state.outcome.winner == "cho" else "한"]
+		status.text = "대국 종료 · %s · %s" % [result_text, state.outcome.reason]
 	if state.ai.status == "error":
 		status.text += " · " + str(state.ai.error)
+	var clock: Dictionary = state.get("clock", {})
+	clock_panel.text = ""
+	if clock.get("enabled", false):
+		clock_panel.text = "대국 시계 · 초 %s / 한 %s%s" % [
+			format_clock(int(clock.get("choMs", 0))), format_clock(int(clock.get("hanMs", 0))),
+			" · 매 수 +%d초" % (int(clock.get("incrementMs", 0)) / 1000) if int(clock.get("incrementMs", 0)) > 0 else "",
+		]
 	var points: Dictionary = state.get("points", {})
 	var cho_points := float(points.get("cho", 0.0))
 	var han_points := float(points.get("han", 0.0))
@@ -1128,9 +1266,9 @@ func render_position(state: Dictionary) -> void:
 	action_buttons[2].disabled = action_buttons[2].disabled or not state.canUndo
 	action_buttons[3].disabled = action_buttons[3].disabled or state.ai.status != "thinking"
 	action_buttons[4].disabled = action_buttons[4].disabled or not state.ai.status in ["paused", "error"]
-	device_recommend.disabled = not variation.is_empty() or not device_engine.available() or device_engine.busy() or state.outcome.over or state.legalMoves.is_empty()
+	device_recommend.disabled = local_match_active() or not variation.is_empty() or not device_engine.available() or device_engine.busy() or state.outcome.over or state.legalMoves.is_empty()
 	device_cancel.disabled = not variation.is_empty() or not device_engine.busy()
-	full_review_start.disabled = pending or self.state.moves.is_empty() or full_review.get("status", "") == "running"
+	full_review_start.disabled = local_match_active() or pending or self.state.moves.is_empty() or full_review.get("status", "") == "running"
 	full_review_cancel.disabled = pending or full_review.get("status", "") != "running"
 	review_export_button.disabled = pending or full_review.get("status", "") != "complete"
 	review_import_button.disabled = pending or state.is_empty() or not FileAccess.file_exists(review_export_path)
@@ -1183,3 +1321,11 @@ func render_position(state: Dictionary) -> void:
 	prediction_next_button.disabled = pending or review.is_empty() or not variation.is_empty() or prediction_size < 2 or prediction_index >= prediction_size - 1
 	game_review_play_button.disabled = pending or state.moves.is_empty() or not variation.is_empty() or game_review_playing
 	game_review_stop_button.disabled = not game_review_playing
+	if local_match_active():
+		for button in review_buttons:
+			button.disabled = true
+		review_analysis_button.disabled = true
+		variation_start.disabled = true
+	resign_button.disabled = pending or not local_match_active()
+	draw_button.disabled = pending or not local_match_active()
+	rematch_button.disabled = pending or state.get("mode", "") != "local" or not state.outcome.over

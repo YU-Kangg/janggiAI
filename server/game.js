@@ -121,14 +121,20 @@ export class Game {
   aiJob = null;
   fullReviewJob = null;
   nextReviewJobId = 1;
+  adjudication = null;
+  timeControl = null;
+  clockRemaining = { cho: 0, han: 0 };
+  clockStartedAt = null;
+  players = { cho: '초', han: '한' };
 
-  constructor({ recommendMove = recommend, storage = null } = {}) {
+  constructor({ recommendMove = recommend, storage = null, now = () => Date.now() } = {}) {
     this.recommendMove = recommendMove;
     this.storage = storage;
+    this.now = now;
     const saved = storage?.load();
     if (saved) {
-      if (saved.version !== 1 || saved.variant !== 'janggi' || !Array.isArray(saved.moves)
-        || !['practice', 'ai'].includes(saved.mode) || !['cho', 'han'].includes(saved.humanSide)
+      if (![1, 2].includes(saved.version) || saved.variant !== 'janggi' || !Array.isArray(saved.moves)
+        || !['practice', 'local', 'ai'].includes(saved.mode) || !['cho', 'han'].includes(saved.humanSide)
         || !Number.isSafeInteger(saved.revision) || saved.revision < 0) throw new Error('저장된 기보 형식이 올바르지 않습니다.');
       this.state = rulePosition(saved.moves, initialFen(saved.setup));
       this.moves = [...saved.moves];
@@ -136,12 +142,23 @@ export class Game {
       this.mode = saved.mode;
       this.humanSide = saved.humanSide;
       this.revision = saved.revision + 1;
+      this.adjudication = saved.version >= 2 ? saved.adjudication ?? null : null;
+      this.timeControl = saved.version >= 2 ? saved.timeControl ?? null : null;
+      this.clockRemaining = saved.version >= 2 && saved.clockRemaining
+        ? { cho: saved.clockRemaining.cho, han: saved.clockRemaining.han } : { cho: 0, han: 0 };
+      this.clockStartedAt = this.timeControl && !this.adjudication && !this.state.outcome.over ? this.now() : null;
+      this.players = saved.version >= 2 && saved.players ? { ...saved.players } : { cho: '초', han: '한' };
       if (this.mode === 'ai' && !this.state.outcome.over && this.state.turn !== this.humanSide) this.aiStatus = 'paused';
     }
   }
 
-  persist(moves, setup = this.setup, mode = this.mode, humanSide = this.humanSide) {
-    this.storage?.save({ version: 1, variant: 'janggi', moves, setup, mode, humanSide, revision: this.revision + 1 });
+  persist(moves, setup = this.setup, mode = this.mode, humanSide = this.humanSide, adjudication = this.adjudication,
+    timeControl = this.timeControl, clockRemaining = this.clockRemaining, players = this.players) {
+    this.storage?.save({
+      version: 2, variant: 'janggi', moves, setup, mode, humanSide, adjudication,
+      timeControl, clockRemaining: { ...clockRemaining }, revision: this.revision + 1,
+      players: { ...players },
+    });
   }
 
   lastHumanMove() {
@@ -152,12 +169,52 @@ export class Game {
 
   snapshot() {
     this.state ??= rulePosition(this.moves, initialFen(this.setup));
+    this.syncClock();
+    const outcome = this.adjudication ?? this.state.outcome;
     return {
-      ...this.state, initialFen: initialFen(this.setup), setup: { ...this.setup }, moves: [...this.moves], revision: this.revision, variant: 'janggi',
+      ...this.state, outcome, initialFen: initialFen(this.setup), setup: { ...this.setup }, moves: [...this.moves], revision: this.revision, variant: 'janggi',
       mode: this.mode, humanSide: this.humanSide,
+      players: { ...this.players },
+      clock: {
+        enabled: this.timeControl !== null,
+        choMs: Math.max(0, Math.round(this.clockRemaining.cho)), hanMs: Math.max(0, Math.round(this.clockRemaining.han)),
+        active: outcome.over || !this.timeControl ? null : this.state.turn,
+        initialMs: this.timeControl?.initialMs ?? 0,
+        incrementMs: this.timeControl?.incrementMs ?? 0,
+      },
       canUndo: this.mode === 'ai' ? this.lastHumanMove() >= 0 : this.moves.length > 0,
       ai: { status: this.aiStatus, error: this.aiError },
     };
+  }
+
+  syncClock() {
+    if (!this.timeControl || this.adjudication || !this.state || this.state.outcome.over || this.clockStartedAt == null) return;
+    const current = this.state.turn;
+    const currentTime = this.now();
+    this.clockRemaining[current] -= Math.max(0, currentTime - this.clockStartedAt);
+    this.clockStartedAt = currentTime;
+    if (this.clockRemaining[current] <= 0) {
+      this.clockRemaining[current] = 0;
+      this.adjudication = {
+        over: true, result: current === 'cho' ? '0-1' : '1-0',
+        winner: current === 'cho' ? 'han' : 'cho', reason: '시간패',
+      };
+      this.clockStartedAt = null;
+      this.persist(this.moves);
+      this.revision++;
+    }
+  }
+
+  clockConfiguration(value) {
+    if (value == null) {
+      return { timeControl: null, clockRemaining: { cho: 0, han: 0 } };
+    }
+    if (!Number.isInteger(value.initialSeconds) || value.initialSeconds < 10 || value.initialSeconds > 7200
+      || !Number.isInteger(value.incrementSeconds) || value.incrementSeconds < 0 || value.incrementSeconds > 60) {
+      throw fail('시간 설정이 올바르지 않습니다.', 400);
+    }
+    const timeControl = { initialMs: value.initialSeconds * 1000, incrementMs: value.incrementSeconds * 1000 };
+    return { timeControl, clockRemaining: { cho: timeControl.initialMs, han: timeControl.initialMs } };
   }
 
   stopAi() {
@@ -254,16 +311,18 @@ export class Game {
   }
 
   async act(action, data) {
+    const state = this.snapshot();
     if (data.revision !== this.revision) {
       throw Object.assign(new Error('다른 화면에서 기보가 변경되었습니다. 새로고침하세요.'), { status: 409 });
     }
-    const state = this.snapshot();
     if (action === 'review') {
+      if (this.mode === 'local' && !state.outcome.over) throw fail('로컬 대국이 끝난 뒤 복기할 수 있습니다.');
       if (!Number.isInteger(data.ply) || data.ply < 0 || data.ply > this.moves.length) throw fail('복기할 수 번호가 올바르지 않습니다.', 400);
       const moves = this.moves.slice(0, data.ply);
       return { ...state, ...rulePosition(moves, initialFen(this.setup)), moves, legalMoves: [], canUndo: false };
     }
     if (action === 'variation') {
+      if (this.mode === 'local' && !state.outcome.over) throw fail('로컬 대국이 끝난 뒤 분석할 수 있습니다.');
       if (!Number.isInteger(data.basePly) || data.basePly < 0 || data.basePly > this.moves.length) throw fail('분기 시작 수 번호가 올바르지 않습니다.', 400);
       if (!Array.isArray(data.moves) || data.moves.length > 128 || data.moves.some(move => typeof move !== 'string')) {
         throw fail('분기 수순 형식이 올바르지 않습니다.', 400);
@@ -277,6 +336,7 @@ export class Game {
       };
     }
     if (action === 'review-analysis') {
+      if (this.mode === 'local' && !state.outcome.over) throw fail('로컬 대국이 끝난 뒤 분석할 수 있습니다.');
       if (!Number.isInteger(data.ply) || data.ply < 1 || data.ply > this.moves.length) throw fail('분석할 실제 수 번호가 올바르지 않습니다.', 400);
       if (this.aiJob) throw fail('AI 응수가 끝난 뒤 복기 분석을 시작하세요.');
       const revision = this.revision;
@@ -299,6 +359,7 @@ export class Game {
       return reviewEntry({ revision, ply: data.ply, position, result, afterPosition, afterResult, playedMove });
     }
     if (action === 'review-start') {
+      if (this.mode === 'local' && !state.outcome.over) throw fail('로컬 대국이 끝난 뒤 리뷰할 수 있습니다.');
       if (!this.moves.length) throw fail('분석할 기보가 없습니다.', 400);
       if (this.aiJob) throw fail('AI 응수가 끝난 뒤 전체 리뷰를 시작하세요.');
       return this.startFullReview();
@@ -334,6 +395,32 @@ export class Game {
       this.startAi();
       return this.snapshot();
     }
+    if (action === 'resign') {
+      if (this.mode !== 'local') throw fail('로컬 대국에서만 기권할 수 있습니다.');
+      if (state.outcome.over) throw fail('이미 종료된 대국입니다.');
+      if (!['cho', 'han'].includes(data.side) || data.side !== state.turn) throw fail('현재 차례 진영만 기권할 수 있습니다.', 400);
+      const adjudication = {
+        over: true, result: data.side === 'cho' ? '0-1' : '1-0',
+        winner: data.side === 'cho' ? 'han' : 'cho', reason: '기권',
+      };
+      this.persist(this.moves, this.setup, this.mode, this.humanSide, adjudication);
+      this.stopAi();
+      this.adjudication = adjudication;
+      this.clockStartedAt = null;
+      this.revision++;
+      return this.snapshot();
+    }
+    if (action === 'draw') {
+      if (this.mode !== 'local') throw fail('로컬 대국에서만 합의 무승부를 사용할 수 있습니다.');
+      if (state.outcome.over) throw fail('이미 종료된 대국입니다.');
+      const adjudication = { over: true, result: '1/2-1/2', winner: null, reason: '합의 무승부' };
+      this.persist(this.moves, this.setup, this.mode, this.humanSide, adjudication);
+      this.stopAi();
+      this.adjudication = adjudication;
+      this.clockStartedAt = null;
+      this.revision++;
+      return this.snapshot();
+    }
     if (state.outcome.over && (action === 'move' || action === 'recommend')) {
       throw Object.assign(new Error('종료된 대국입니다. 무르기 또는 새 대국을 시작하세요.'), { status: 409 });
     }
@@ -341,6 +428,7 @@ export class Game {
       throw fail('AI 차례입니다. 응수를 기다리거나 재개하세요.');
     }
     if (action === 'recommend') {
+      if (this.mode === 'local' && !state.outcome.over) throw fail('로컬 대국이 끝난 뒤 추천을 사용할 수 있습니다.');
       const result = await this.recommendMove([...this.moves], initialFen(this.setup));
       if (!state.legalMoves.includes(result.move)) throw new Error('합법 수가 아닌 추천을 받았습니다.');
       return { ...result, revision: this.revision };
@@ -349,11 +437,15 @@ export class Game {
     let nextSetup = this.setup;
     let nextMode = this.mode;
     let nextSide = this.humanSide;
+    let nextPlayers = this.players;
+    let nextTimeControl = this.timeControl;
+    let nextClockRemaining = { ...this.clockRemaining };
     if (action === 'move') {
       if (!state.legalMoves.includes(data.move)) {
         throw Object.assign(new Error('둘 수 없는 수입니다.'), { status: 400 });
       }
       nextMoves = [...this.moves, data.move];
+      if (nextTimeControl) nextClockRemaining[state.turn] += nextTimeControl.incrementMs;
     } else if (action === 'undo') {
       if (!state.canUndo) throw fail('되돌릴 내 착수가 없습니다.');
       nextMoves = this.mode === 'ai' ? this.moves.slice(0, this.lastHumanMove()) : this.moves.slice(0, -1);
@@ -363,19 +455,31 @@ export class Game {
       nextSetup = data.setup ?? this.setup;
       nextMode = data.mode ?? this.mode;
       nextSide = data.humanSide ?? this.humanSide;
-      if (!['practice', 'ai'].includes(nextMode) || !['cho', 'han'].includes(nextSide)) throw fail('대국 방식 또는 진영이 올바르지 않습니다.', 400);
+      nextPlayers = data.players ?? this.players;
+      if (!['practice', 'local', 'ai'].includes(nextMode) || !['cho', 'han'].includes(nextSide)) throw fail('대국 방식 또는 진영이 올바르지 않습니다.', 400);
+      if (!nextPlayers || typeof nextPlayers.cho !== 'string' || typeof nextPlayers.han !== 'string'
+        || !nextPlayers.cho.trim() || !nextPlayers.han.trim() || nextPlayers.cho.trim().length > 12 || nextPlayers.han.trim().length > 12) {
+        throw fail('대국자 이름은 1~12자로 입력하세요.', 400);
+      }
+      nextPlayers = { cho: nextPlayers.cho.trim(), han: nextPlayers.han.trim() };
       initialFen(nextSetup);
+      ({ timeControl: nextTimeControl, clockRemaining: nextClockRemaining } = this.clockConfiguration(data.timeControl ?? null));
     }
     else throw Object.assign(new Error('지원하지 않는 동작입니다.'), { status: 404 });
     // Commit only after the engine has successfully reconstructed the new board.
     const nextState = rulePosition(nextMoves, initialFen(nextSetup));
-    this.persist(nextMoves, nextSetup, nextMode, nextSide);
+    this.persist(nextMoves, nextSetup, nextMode, nextSide, null, nextTimeControl, nextClockRemaining, nextPlayers);
     this.stopAi();
     this.moves = nextMoves;
     this.setup = { cho: nextSetup.cho, han: nextSetup.han };
     this.mode = nextMode;
     this.humanSide = nextSide;
+    this.players = nextPlayers;
     this.state = nextState;
+    this.adjudication = null;
+    this.timeControl = nextTimeControl;
+    this.clockRemaining = nextClockRemaining;
+    this.clockStartedAt = this.timeControl ? this.now() : null;
     this.revision += 1;
     if (action !== 'undo') this.startAi();
     return this.snapshot();
