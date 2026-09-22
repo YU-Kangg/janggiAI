@@ -520,6 +520,7 @@ func apply_setup_selection() -> void:
 func sync_new_game_controls() -> void:
 	if state.is_empty():
 		return
+	game_mode_tabs.current_tab = 1 if state.get("mode", "ai") == "local" else 0
 	selected_cho_setup = str(state.get("setup", {}).get("cho", "nbbn"))
 	selected_han_setup = str(state.get("setup", {}).get("han", "nbbn"))
 	cho_setup.select(arrangement_index(selected_cho_setup))
