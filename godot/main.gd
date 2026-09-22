@@ -52,6 +52,7 @@ var variation_evaluation: Dictionary = {}
 var variation_evaluation_target := ""
 var full_review: Dictionary = {}
 var review_restore_revision := -1
+var open_review_when_ready := false
 var full_review_start := Button.new()
 var full_review_cancel := Button.new()
 var review_export_button := Button.new()
@@ -90,6 +91,23 @@ var page_scroll := ScrollContainer.new()
 var last_animated_move := ""
 var piece_move_animation_seconds := 0.18
 var playback_move := ""
+var review_tabs := TabContainer.new()
+var review_workspace := VBoxContainer.new()
+var review_analysis_workspace := VBoxContainer.new()
+var review_archive_workspace := VBoxContainer.new()
+var review_start_controls := HFlowContainer.new()
+var review_navigation_controls := HFlowContainer.new()
+var review_coach_controls := HFlowContainer.new()
+var review_key_controls := HFlowContainer.new()
+var review_analysis_controls := HFlowContainer.new()
+var review_playback_controls := HFlowContainer.new()
+var review_file_controls := HFlowContainer.new()
+
+func add_section_title(parent: Control, caption: String) -> void:
+	var label := Label.new()
+	label.text = caption
+	label.add_theme_font_size_override("font_size", 18)
+	parent.add_child(label)
 
 func _ready() -> void:
 	var margin := MarginContainer.new()
@@ -124,12 +142,8 @@ func _ready() -> void:
 	score_panel.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(score_panel)
 	evaluation_graph.ply_selected.connect(show_review)
-	column.add_child(evaluation_graph)
 	review_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	column.add_child(review_summary)
 	review_method_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	column.add_child(review_method_notice)
-	column.add_child(key_move_status)
 	side.add_item("초로 AI 대국")
 	side.add_item("한으로 AI 대국")
 	column.add_child(side)
@@ -198,113 +212,142 @@ func _ready() -> void:
 	device_cancel.custom_minimum_size.y = 44
 	device_cancel.pressed.connect(cancel_device_recommendation)
 	actions.add_child(device_cancel)
-	full_review_start.text = "전체 리뷰"
+	full_review_start.text = "게임 리뷰 시작"
 	full_review_start.custom_minimum_size.y = 44
 	full_review_start.pressed.connect(start_full_review)
-	actions.add_child(full_review_start)
 	full_review_cancel.text = "리뷰 취소"
 	full_review_cancel.custom_minimum_size.y = 44
 	full_review_cancel.pressed.connect(cancel_full_review)
-	actions.add_child(full_review_cancel)
 	review_export_button.text = "리뷰 JSON 저장"
 	review_export_button.custom_minimum_size.y = 44
 	review_export_button.pressed.connect(export_full_review)
-	actions.add_child(review_export_button)
 	review_import_button.text = "리뷰 JSON 불러오기"
 	review_import_button.custom_minimum_size.y = 44
 	review_import_button.pressed.connect(import_full_review)
-	actions.add_child(review_import_button)
 	device_engine.completed.connect(on_device_recommendation)
-	column.add_child(history)
+	review_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.add_child(review_tabs)
+	review_workspace.name = "게임 리뷰"
+	review_workspace.add_theme_constant_override("separation", 8)
+	review_workspace.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	review_tabs.add_child(review_workspace)
+	add_section_title(review_workspace, "대국 리뷰")
+	review_start_controls.add_child(full_review_start)
+	review_start_controls.add_child(full_review_cancel)
+	review_workspace.add_child(review_start_controls)
+	review_workspace.add_child(review_summary)
+	review_workspace.add_child(review_method_notice)
+	review_workspace.add_child(evaluation_graph)
+	add_section_title(review_workspace, "현재 장면")
+	review_workspace.add_child(key_move_status)
+	review_workspace.add_child(history)
 	history.item_selected.connect(func(index: int): show_review(index))
-	var navigation := HFlowContainer.new()
-	column.add_child(navigation)
+	review_workspace.add_child(review_navigation_controls)
 	for caption in ["처음", "이전 수", "다음 수", "현재 대국"]:
 		var button := Button.new()
 		button.text = caption
 		button.custom_minimum_size.y = 44
-		navigation.add_child(button)
+		review_navigation_controls.add_child(button)
 		review_buttons.append(button)
 	review_buttons[0].pressed.connect(func(): show_review(0))
 	review_buttons[1].pressed.connect(func(): show_review(view_ply() - 1))
 	review_buttons[2].pressed.connect(func(): show_review(view_ply() + 1))
+	review_buttons[3].text = "대국으로 돌아가기"
 	review_buttons[3].pressed.connect(return_live)
-	review_analysis_button.text = "선택 수 서버 분석"
+	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	review_workspace.add_child(message)
+	add_section_title(review_workspace, "이 수에서 배워보기")
+	review_analysis_button.text = "최선 수 보기"
 	review_analysis_button.custom_minimum_size.y = 44
 	review_analysis_button.pressed.connect(start_review_analysis)
-	navigation.add_child(review_analysis_button)
-	variation_start.text = "자유 분석"
-	variation_start.custom_minimum_size.y = 44
-	variation_start.pressed.connect(start_variation)
-	navigation.add_child(variation_start)
-	variation_undo.text = "분기 무르기"
-	variation_undo.custom_minimum_size.y = 44
-	variation_undo.pressed.connect(undo_variation)
-	navigation.add_child(variation_undo)
-	variation_resume.text = "재개"
-	variation_resume.custom_minimum_size.y = 44
-	variation_resume.pressed.connect(resume_review)
-	navigation.add_child(variation_resume)
+	review_coach_controls.add_child(review_analysis_button)
+	retry_button.text = "다시 풀기"
+	retry_button.custom_minimum_size.y = 44
+	retry_button.pressed.connect(start_retry)
+	review_coach_controls.add_child(retry_button)
+	retry_hint_button.text = "힌트"
+	retry_hint_button.custom_minimum_size.y = 44
+	retry_hint_button.pressed.connect(show_retry_hint)
+	review_coach_controls.add_child(retry_hint_button)
+	retry_next_button.text = "다음 실수"
+	retry_next_button.custom_minimum_size.y = 44
+	retry_next_button.pressed.connect(continue_retry_to_next_key)
+	review_coach_controls.add_child(retry_next_button)
+	review_workspace.add_child(review_coach_controls)
+	add_section_title(review_workspace, "핵심 장면")
 	previous_key_move_button.text = "이전 핵심 수"
 	previous_key_move_button.custom_minimum_size.y = 44
 	previous_key_move_button.pressed.connect(previous_key_move)
-	navigation.add_child(previous_key_move_button)
+	review_key_controls.add_child(previous_key_move_button)
 	key_move_filter.add_item("핵심: 부정확 이상")
 	key_move_filter.add_item("핵심: 실수 이상")
 	key_move_filter.add_item("핵심: 큰 실수만")
 	key_move_filter.item_selected.connect(func(_index: int): render_board())
-	navigation.add_child(key_move_filter)
+	review_key_controls.add_child(key_move_filter)
 	next_key_move_button.text = "다음 핵심 수"
 	next_key_move_button.custom_minimum_size.y = 44
 	next_key_move_button.pressed.connect(next_key_move)
-	navigation.add_child(next_key_move_button)
+	review_key_controls.add_child(next_key_move_button)
 	worst_move_button.text = "최대 손실 수"
 	worst_move_button.custom_minimum_size.y = 44
 	worst_move_button.pressed.connect(show_worst_move)
-	navigation.add_child(worst_move_button)
-	retry_button.text = "다시 두기"
-	retry_button.custom_minimum_size.y = 44
-	retry_button.pressed.connect(start_retry)
-	navigation.add_child(retry_button)
-	retry_hint_button.text = "힌트"
-	retry_hint_button.custom_minimum_size.y = 44
-	retry_hint_button.pressed.connect(show_retry_hint)
-	navigation.add_child(retry_hint_button)
-	retry_next_button.text = "다음 실수 연습"
-	retry_next_button.custom_minimum_size.y = 44
-	retry_next_button.pressed.connect(continue_retry_to_next_key)
-	navigation.add_child(retry_next_button)
-	prediction_button.text = "예상 수순"
+	review_key_controls.add_child(worst_move_button)
+	review_workspace.add_child(review_key_controls)
+	review_analysis_workspace.name = "자유 분석"
+	review_analysis_workspace.add_theme_constant_override("separation", 8)
+	review_tabs.add_child(review_analysis_workspace)
+	add_section_title(review_analysis_workspace, "직접 수를 놓아 분석")
+	variation_start.text = "자유 분석"
+	variation_start.custom_minimum_size.y = 44
+	variation_start.pressed.connect(start_variation)
+	review_analysis_controls.add_child(variation_start)
+	variation_undo.text = "분기 무르기"
+	variation_undo.custom_minimum_size.y = 44
+	variation_undo.pressed.connect(undo_variation)
+	review_analysis_controls.add_child(variation_undo)
+	variation_resume.text = "재개"
+	variation_resume.custom_minimum_size.y = 44
+	variation_resume.pressed.connect(resume_review)
+	review_analysis_controls.add_child(variation_resume)
+	prediction_button.text = "추천 수순 보기"
 	prediction_button.custom_minimum_size.y = 44
 	prediction_button.pressed.connect(play_prediction)
-	navigation.add_child(prediction_button)
+	review_analysis_controls.add_child(prediction_button)
 	prediction_stop_button.text = "수순 정지"
 	prediction_stop_button.custom_minimum_size.y = 44
 	prediction_stop_button.pressed.connect(stop_prediction)
-	navigation.add_child(prediction_stop_button)
+	review_analysis_controls.add_child(prediction_stop_button)
 	prediction_previous_button.text = "수순 이전"
 	prediction_previous_button.custom_minimum_size.y = 44
 	prediction_previous_button.pressed.connect(func(): step_prediction(-1))
-	navigation.add_child(prediction_previous_button)
+	review_analysis_controls.add_child(prediction_previous_button)
 	prediction_next_button.text = "수순 다음"
 	prediction_next_button.custom_minimum_size.y = 44
 	prediction_next_button.pressed.connect(func(): step_prediction(1))
-	navigation.add_child(prediction_next_button)
+	review_analysis_controls.add_child(prediction_next_button)
+	review_analysis_workspace.add_child(review_analysis_controls)
+	add_section_title(review_workspace, "리뷰 재생")
 	game_review_play_button.text = "기보 재생"
 	game_review_play_button.custom_minimum_size.y = 44
 	game_review_play_button.pressed.connect(play_game_review)
-	navigation.add_child(game_review_play_button)
+	review_playback_controls.add_child(game_review_play_button)
 	game_review_stop_button.text = "기보 정지"
 	game_review_stop_button.custom_minimum_size.y = 44
 	game_review_stop_button.pressed.connect(stop_game_review)
-	navigation.add_child(game_review_stop_button)
+	review_playback_controls.add_child(game_review_stop_button)
 	playback_speed.add_item("재생 느리게")
 	playback_speed.add_item("재생 보통")
 	playback_speed.add_item("재생 빠르게")
 	playback_speed.select(1)
-	navigation.add_child(playback_speed)
-	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	column.add_child(message)
+	review_playback_controls.add_child(playback_speed)
+	review_workspace.add_child(review_playback_controls)
+	review_archive_workspace.name = "보관"
+	review_archive_workspace.add_theme_constant_override("separation", 8)
+	review_tabs.add_child(review_archive_workspace)
+	add_section_title(review_archive_workspace, "리뷰 파일")
+	review_file_controls.add_child(review_export_button)
+	review_file_controls.add_child(review_import_button)
+	review_archive_workspace.add_child(review_file_controls)
 	new_game_dialog.confirmed.connect(confirm_new_game)
 	add_child(new_game_dialog)
 	resign_dialog.dialog_text = "현재 차례 진영이 기권할까요?"
@@ -468,7 +511,11 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 				evaluation_graph.set_results(payload.results)
 				review_summary.text = format_review_summary(payload.get("summary", {}))
 				export_full_review(false)
+				if open_review_when_ready:
+					open_review_when_ready = false
+					call_deferred("open_guided_review")
 			elif payload.status == "cancelled":
+				open_review_when_ready = false
 				message.text = "전체 리뷰를 취소했습니다."
 			else:
 				message.text = "전체 리뷰 실패: %s" % str(payload.get("error", "알 수 없는 오류"))
@@ -520,8 +567,15 @@ func act(action: String, data: Dictionary = {}) -> void:
 func start_full_review() -> void:
 	if pending or state.is_empty() or state.moves.is_empty() or full_review.get("status", "") == "running":
 		return
+	open_review_when_ready = true
 	return_live()
 	send("review-start", {"revision": state.revision})
+
+func open_guided_review() -> void:
+	if pending or state.is_empty() or state.moves.is_empty():
+		return
+	var first_key := next_key_ply(0)
+	show_review(first_key if first_key > 0 else 1)
 
 func cancel_full_review() -> void:
 	if pending or full_review.get("status", "") != "running":
@@ -1268,6 +1322,7 @@ func render_position(state: Dictionary) -> void:
 	action_buttons[4].disabled = action_buttons[4].disabled or not state.ai.status in ["paused", "error"]
 	device_recommend.disabled = local_match_active() or not variation.is_empty() or not device_engine.available() or device_engine.busy() or state.outcome.over or state.legalMoves.is_empty()
 	device_cancel.disabled = not variation.is_empty() or not device_engine.busy()
+	full_review_start.text = "리뷰 다시 보기" if full_review.get("status", "") == "complete" else "게임 리뷰 시작"
 	full_review_start.disabled = local_match_active() or pending or self.state.moves.is_empty() or full_review.get("status", "") == "running"
 	full_review_cancel.disabled = pending or full_review.get("status", "") != "running"
 	review_export_button.disabled = pending or full_review.get("status", "") != "complete"
