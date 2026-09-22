@@ -28,6 +28,9 @@ func run() -> void:
 	check(app.full_review_start.get_parent() == app.review_start_controls and app.retry_button.get_parent() == app.review_coach_controls, "review start and learning actions grouped")
 	check(app.variation_start.get_parent() == app.review_analysis_controls and app.review_export_button.get_parent() == app.review_file_controls, "analysis and file actions separated")
 	check(app.full_review_start.text == "게임 리뷰 시작" and app.review_analysis_button.text == "최선 수 보기" and app.retry_button.text == "다시 풀기", "guided review action labels")
+	check(app.game_mode_tabs.get_tab_count() == 2 and app.game_mode_tabs.get_tab_title(0) == "AI 대전" and app.game_mode_tabs.get_tab_title(1) == "로컬 2인 대전", "AI and local match setup separated")
+	check(app.side.get_parent() == app.ai_game_panel and app.cho_name.get_parent() == app.local_game_panel and app.time_control.get_parent() == app.local_game_panel, "mode-specific controls grouped")
+	check(app.cho_setup.get_parent().get_parent() == app.setup_dialog and app.han_setup.get_parent().get_parent() == app.setup_dialog, "piece setup controls moved to modal")
 	check(not app.device_engine.available() and app.device_recommend.disabled, "desktop fallback without Android engine")
 	app.act("reset", {"mode": "ai", "humanSide": "cho"})
 	await wait_idle()
@@ -232,6 +235,7 @@ func run() -> void:
 	check(app.grid.get_child(0).tooltip_text == "i1", "Han board orientation")
 	app.cho_setup.select(3)
 	app.han_setup.select(2)
+	app.apply_setup_selection()
 	app.cho_name.text = "춘향"
 	app.han_name.text = "몽룡"
 	app.time_control.select(2)

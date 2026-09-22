@@ -22,6 +22,14 @@ var time_control := OptionButton.new()
 var cho_name := LineEdit.new()
 var han_name := LineEdit.new()
 var clock_panel := Label.new()
+var game_mode_tabs := TabContainer.new()
+var ai_game_panel := VBoxContainer.new()
+var local_game_panel := VBoxContainer.new()
+var ai_setup_summary := Label.new()
+var local_setup_summary := Label.new()
+var setup_dialog := ConfirmationDialog.new()
+var selected_cho_setup := "nbbn"
+var selected_han_setup := "nbbn"
 var pending_new_mode := "ai"
 var resign_button := Button.new()
 var draw_button := Button.new()
@@ -144,18 +152,39 @@ func _ready() -> void:
 	evaluation_graph.ply_selected.connect(show_review)
 	review_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	review_method_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	game_mode_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.add_child(game_mode_tabs)
+	ai_game_panel.name = "AI 대전"
+	ai_game_panel.add_theme_constant_override("separation", 8)
+	game_mode_tabs.add_child(ai_game_panel)
+	var ai_description := Label.new()
+	ai_description.text = "장기 엔진과 대국합니다. 플레이할 진영을 선택하세요."
+	ai_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ai_game_panel.add_child(ai_description)
 	side.add_item("초로 AI 대국")
 	side.add_item("한으로 AI 대국")
-	column.add_child(side)
+	ai_game_panel.add_child(side)
+	ai_setup_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ai_game_panel.add_child(ai_setup_summary)
+	var ai_setup_button := Button.new()
+	ai_setup_button.text = "기물 배치 선택"
+	ai_setup_button.custom_minimum_size.y = 44
+	ai_setup_button.pressed.connect(open_setup_dialog)
+	ai_game_panel.add_child(ai_setup_button)
+	add_action(ai_game_panel, "새 AI 대국 시작", func(): open_new_game_dialog("ai"))
+	local_game_panel.name = "로컬 2인 대전"
+	local_game_panel.add_theme_constant_override("separation", 8)
+	game_mode_tabs.add_child(local_game_panel)
+	var local_description := Label.new()
+	local_description.text = "한 기기에서 초와 한이 번갈아 둡니다."
+	local_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	local_game_panel.add_child(local_description)
 	cho_name.placeholder_text = "초 대국자 이름"
 	cho_name.text = "초"
 	han_name.placeholder_text = "한 대국자 이름"
 	han_name.text = "한"
-	column.add_child(cho_name)
-	column.add_child(han_name)
-	var cho_setup_label := Label.new()
-	cho_setup_label.text = "초 차림"
-	column.add_child(cho_setup_label)
+	local_game_panel.add_child(cho_name)
+	local_game_panel.add_child(han_name)
 	for option in [cho_setup, han_setup]:
 		option.add_item("마상상마")
 		option.add_item("상마마상")
@@ -165,16 +194,24 @@ func _ready() -> void:
 	han_setup.select(0)
 	cho_setup.tooltip_text = "초 차림"
 	han_setup.tooltip_text = "한 차림"
-	column.add_child(cho_setup)
-	var han_setup_label := Label.new()
-	han_setup_label.text = "한 차림"
-	column.add_child(han_setup_label)
-	column.add_child(han_setup)
 	time_control.add_item("시간 제한 없음")
 	time_control.add_item("5분")
 	time_control.add_item("10분 + 5초")
 	time_control.add_item("30분")
-	column.add_child(time_control)
+	local_game_panel.add_child(time_control)
+	local_setup_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	local_game_panel.add_child(local_setup_summary)
+	var local_setup_button := Button.new()
+	local_setup_button.text = "기물 배치 선택"
+	local_setup_button.custom_minimum_size.y = 44
+	local_setup_button.pressed.connect(open_setup_dialog)
+	local_game_panel.add_child(local_setup_button)
+	var local_game_button := Button.new()
+	local_game_button.text = "새 로컬 대국 시작"
+	local_game_button.custom_minimum_size.y = 44
+	local_game_button.pressed.connect(func(): open_new_game_dialog("local"))
+	local_game_panel.add_child(local_game_button)
+	update_setup_summaries()
 	clock_panel.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(clock_panel)
 	grid.columns = 9
@@ -182,12 +219,6 @@ func _ready() -> void:
 	column.add_child(grid)
 	var actions := HFlowContainer.new()
 	column.add_child(actions)
-	add_action(actions, "새 AI 대국", func(): open_new_game_dialog("ai"))
-	var local_game_button := Button.new()
-	local_game_button.text = "새 로컬 대국"
-	local_game_button.custom_minimum_size.y = 44
-	local_game_button.pressed.connect(func(): open_new_game_dialog("local"))
-	actions.add_child(local_game_button)
 	add_action(actions, "한수쉼", pass_turn)
 	add_action(actions, "무르기", func(): act("undo"))
 	add_action(actions, "AI 취소", func(): act("cancel-ai"))
@@ -350,6 +381,22 @@ func _ready() -> void:
 	review_archive_workspace.add_child(review_file_controls)
 	new_game_dialog.confirmed.connect(confirm_new_game)
 	add_child(new_game_dialog)
+	setup_dialog.title = "기물 배치 선택"
+	setup_dialog.dialog_text = "초와 한의 마·상 배치를 선택하세요."
+	setup_dialog.confirmed.connect(apply_setup_selection)
+	var setup_form := VBoxContainer.new()
+	setup_form.position = Vector2(24, 90)
+	setup_form.custom_minimum_size = Vector2(620, 260)
+	var setup_cho_label := Label.new()
+	setup_cho_label.text = "초 차림"
+	setup_form.add_child(setup_cho_label)
+	setup_form.add_child(cho_setup)
+	var setup_han_label := Label.new()
+	setup_han_label.text = "한 차림"
+	setup_form.add_child(setup_han_label)
+	setup_form.add_child(han_setup)
+	setup_dialog.add_child(setup_form)
+	add_child(setup_dialog)
 	resign_dialog.dialog_text = "현재 차례 진영이 기권할까요?"
 	resign_dialog.confirmed.connect(func(): act("resign", {"side": state.get("turn", "cho")}))
 	add_child(resign_dialog)
@@ -372,11 +419,32 @@ func arrangement_value(index: int) -> String:
 func arrangement_index(value: String) -> int:
 	return maxi(["nbbn", "bnbn", "nbnb", "bnnb"].find(value), 0)
 
+func arrangement_label(value: String) -> String:
+	return ["마상상마", "상마마상", "마상마상", "상마상마"][arrangement_index(value)]
+
+func update_setup_summaries() -> void:
+	var summary := "기물 배치 · 초 %s / 한 %s" % [arrangement_label(selected_cho_setup), arrangement_label(selected_han_setup)]
+	ai_setup_summary.text = summary
+	local_setup_summary.text = summary
+
+func open_setup_dialog() -> void:
+	cho_setup.select(arrangement_index(selected_cho_setup))
+	han_setup.select(arrangement_index(selected_han_setup))
+	setup_dialog.popup_centered(Vector2i(700, 520))
+
+func apply_setup_selection() -> void:
+	selected_cho_setup = arrangement_value(cho_setup.selected)
+	selected_han_setup = arrangement_value(han_setup.selected)
+	update_setup_summaries()
+
 func sync_new_game_controls() -> void:
 	if state.is_empty():
 		return
-	cho_setup.select(arrangement_index(str(state.get("setup", {}).get("cho", "nbbn"))))
-	han_setup.select(arrangement_index(str(state.get("setup", {}).get("han", "nbbn"))))
+	selected_cho_setup = str(state.get("setup", {}).get("cho", "nbbn"))
+	selected_han_setup = str(state.get("setup", {}).get("han", "nbbn"))
+	cho_setup.select(arrangement_index(selected_cho_setup))
+	han_setup.select(arrangement_index(selected_han_setup))
+	update_setup_summaries()
 	cho_name.text = str(state.get("players", {}).get("cho", "초"))
 	han_name.text = str(state.get("players", {}).get("han", "한"))
 	var clock: Dictionary = state.get("clock", {})
@@ -402,6 +470,7 @@ func selected_time_control() -> Variant:
 
 func open_new_game_dialog(mode: String) -> void:
 	pending_new_mode = mode
+	game_mode_tabs.current_tab = 1 if mode == "local" else 0
 	new_game_dialog.dialog_text = "현재 대국을 지우고 새 %s 대국을 시작할까요?" % ("로컬" if mode == "local" else "AI")
 	new_game_dialog.popup_centered()
 
@@ -409,7 +478,7 @@ func confirm_new_game() -> void:
 	act("reset", {
 		"mode": pending_new_mode,
 		"humanSide": "cho" if side.selected == 0 else "han",
-		"setup": {"cho": arrangement_value(cho_setup.selected), "han": arrangement_value(han_setup.selected)},
+		"setup": {"cho": selected_cho_setup, "han": selected_han_setup},
 		"players": {"cho": cho_name.text.strip_edges(), "han": han_name.text.strip_edges()},
 		"timeControl": selected_time_control() if pending_new_mode == "local" else null,
 	})
