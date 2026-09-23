@@ -38,7 +38,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native.ps1 -Ar
 4. 메인 스레드에서 결과의 FEN·요청 당시 revision·현재 합법 수를 확인한 뒤 표시해야 합니다. 자동 착수하지 않습니다.
 5. 취소·장면 변경·백그라운드 전환 시 `cancel()`하고 작업 스레드를 회수합니다. 준비 후 스레드 시작 실패 시에도 예약 해제가 필요하므로 앱 래퍼에서 반드시 처리해야 합니다.
 
-`position(initial_fen, moves)`는 같은 초기 차림과 기보를 재생해 현재 FEN, 차례, 장군 여부, 합법 수와 종료 결과를 반환합니다. Android 로컬 대전은 매 착수와 저장 복원 때 이 API로 기보 전체를 검증합니다.
+`position(initial_fen, moves)`는 같은 초기 차림과 기보를 재생해 현재 FEN, 차례, 장군·빅장 여부, 합법 수와 종료 결과를 반환합니다. Android 로컬 대전은 매 착수와 저장 복원, 기보 복기와 자유 분석 때 이 API로 전체 수순을 검증합니다.
 
 고정 설정: `janggi`, 1스레드, Hash 16MiB, 최대 300ms·깊이 8, NNUE 비활성화.
 임의 FEN·불법 기보·종료 후 기보는 거부합니다. 앱 통합 시 서버 규칙 버전과의 결과 차이도 검증해야 합니다.

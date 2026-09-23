@@ -39,6 +39,7 @@ var offline_time_control: Variant = null
 var offline_clock := {"cho": 0, "han": 0}
 var offline_clock_started := 0
 var offline_save_path := "user://local-match.json"
+var offline_backup_path := "user://local-match.backup.json"
 var pending_ai_start_after_connect := false
 var pending_new_mode := "ai"
 var resign_button := Button.new()
@@ -596,22 +597,77 @@ func refresh_offline_state(increment_revision := false) -> bool:
 	}
 	return true
 
-func save_offline_local() -> void:
+func offline_review_position(moves: Array[String], allow_moves: bool, use_final_outcome := false) -> Dictionary:
+	var position := native_local_position(str(state.initialFen), moves)
+	if position.has("error"):
+		message.text = "기기 복기 실패: %s" % str(position.error)
+		return {}
+	var snapshot := state.duplicate(true)
+	snapshot["fen"] = position.fen
+	snapshot["turn"] = position.turn
+	snapshot["inCheck"] = position.inCheck
+	snapshot["bikjang"] = position.get("bikjang", false)
+	snapshot["legalMoves"] = Array(position.legalMoves) if allow_moves else []
+	snapshot["points"] = material_points(str(position.fen))
+	snapshot["outcome"] = state.outcome.duplicate(true) if use_final_outcome else position.outcome
+	snapshot["moves"] = moves.duplicate()
+	snapshot["canUndo"] = false
+	snapshot["clock"] = state.get("clock", {}).duplicate(true)
+	return snapshot
+
+func save_offline_local() -> bool:
 	if not offline_local or state.is_empty():
-		return
-	var file := FileAccess.open(offline_save_path, FileAccess.WRITE)
-	if file:
-		file.store_string(JSON.stringify({
-			"version": 1, "setup": state.setup, "moves": offline_moves,
-			"players": state.players, "timeControl": offline_time_control,
-			"clock": offline_clock, "adjudication": offline_adjudication,
-		}))
-		print("OFFLINE_LOCAL_SAVED moves=%d" % offline_moves.size())
+		return false
+	var temporary_path := offline_save_path + ".tmp"
+	if FileAccess.file_exists(temporary_path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(temporary_path))
+	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
+	if file == null:
+		message.text = "로컬 대국 저장 파일을 만들 수 없습니다."
+		return false
+	file.store_string(JSON.stringify({
+		"version": 1, "setup": state.setup, "moves": offline_moves,
+		"players": state.players, "timeControl": offline_time_control,
+		"clock": offline_clock, "adjudication": offline_adjudication,
+	}))
+	file.flush()
+	file.close()
+	var absolute_save := ProjectSettings.globalize_path(offline_save_path)
+	var absolute_backup := ProjectSettings.globalize_path(offline_backup_path)
+	var absolute_temporary := ProjectSettings.globalize_path(temporary_path)
+	if FileAccess.file_exists(offline_backup_path):
+		DirAccess.remove_absolute(absolute_backup)
+	if FileAccess.file_exists(offline_save_path) and DirAccess.rename_absolute(absolute_save, absolute_backup) != OK:
+		DirAccess.remove_absolute(absolute_temporary)
+		message.text = "기존 로컬 대국을 보관하지 못해 저장을 중단했습니다."
+		return false
+	if DirAccess.rename_absolute(absolute_temporary, absolute_save) != OK:
+		if FileAccess.file_exists(offline_backup_path):
+			DirAccess.rename_absolute(absolute_backup, absolute_save)
+		message.text = "로컬 대국 저장에 실패했습니다."
+		return false
+	print("OFFLINE_LOCAL_SAVED moves=%d" % offline_moves.size())
+	return true
 
 func load_offline_local() -> bool:
-	if not ClassDB.class_exists("JanggiNative") or not FileAccess.file_exists(offline_save_path):
+	if not ClassDB.class_exists("JanggiNative"):
 		return false
-	var payload = JSON.parse_string(FileAccess.get_file_as_string(offline_save_path))
+	if load_offline_local_file(offline_save_path):
+		return true
+	if not load_offline_local_file(offline_backup_path):
+		return false
+	var absolute_save := ProjectSettings.globalize_path(offline_save_path)
+	if FileAccess.file_exists(offline_save_path):
+		DirAccess.remove_absolute(absolute_save)
+	DirAccess.copy_absolute(ProjectSettings.globalize_path(offline_backup_path), absolute_save)
+	message.text = "백업에서 로컬 대국을 복구했습니다."
+	print("OFFLINE_LOCAL_BACKUP_RESTORED moves=%d" % offline_moves.size())
+	return true
+
+func load_offline_local_file(path: String) -> bool:
+	if not FileAccess.file_exists(path):
+		return false
+	var payload = JSON.parse_string(FileAccess.get_file_as_string(path))
 	if not payload is Dictionary or int(payload.get("version", 0)) != 1:
 		return false
 	var saved_setup = payload.get("setup", {})
@@ -660,14 +716,17 @@ func start_offline_local() -> void:
 	offline_clock_started = Time.get_ticks_msec()
 	state = {"revision": int(state.get("revision", 0))}
 	if refresh_offline_state(true):
-		save_offline_local()
-		message.text = "오프라인 로컬 대국을 시작했습니다."
-		print("OFFLINE_LOCAL_STARTED")
+		if save_offline_local():
+			message.text = "오프라인 로컬 대국을 시작했습니다."
+			print("OFFLINE_LOCAL_STARTED")
+		else:
+			message.text = "로컬 대국을 시작했지만 기기에 저장할 수 없습니다."
 		render_board()
 
 func sync_offline_clock() -> void:
 	if not offline_local or offline_time_control == null or state.is_empty() or state.outcome.over:
 		return
+	var previous_clock := offline_clock.duplicate(true)
 	var now := Time.get_ticks_msec()
 	var side_key: String = str(state.turn)
 	offline_clock[side_key] = maxi(0, int(offline_clock[side_key]) - maxi(0, now - offline_clock_started))
@@ -676,7 +735,10 @@ func sync_offline_clock() -> void:
 		var winner := "han" if side_key == "cho" else "cho"
 		offline_adjudication = {"over": true, "result": "0-1" if winner == "han" else "1-0", "winner": winner, "reason": "시간패"}
 		refresh_offline_state(true)
-		save_offline_local()
+		if not save_offline_local():
+			offline_clock = previous_clock
+			offline_adjudication = {}
+			refresh_offline_state(false)
 
 func open_new_game_dialog(mode: String) -> void:
 	pending_new_mode = mode
@@ -691,8 +753,9 @@ func confirm_new_game() -> void:
 	if pending_new_mode == "ai" and offline_local:
 		offline_local = false
 		offline_native = null
-		if FileAccess.file_exists(offline_save_path):
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(offline_save_path))
+		for path in [offline_save_path, offline_backup_path, offline_save_path + ".tmp"]:
+			if FileAccess.file_exists(path):
+				DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 		pending_ai_start_after_connect = true
 		state = {}
 		request_state()
@@ -881,6 +944,9 @@ func act_offline_local(action: String, data: Dictionary = {}) -> void:
 	if state.outcome.over and action == "move":
 		message.text = "종료된 대국입니다."
 		return
+	var previous_moves := offline_moves.duplicate()
+	var previous_adjudication := offline_adjudication.duplicate(true)
+	var previous_clock := offline_clock.duplicate(true)
 	if action == "move":
 		var move := str(data.get("move", ""))
 		if not state.legalMoves.has(move):
@@ -908,11 +974,20 @@ func act_offline_local(action: String, data: Dictionary = {}) -> void:
 	offline_clock_started = Time.get_ticks_msec()
 	if refresh_offline_state(true):
 		selected = ""
-		save_offline_local()
+		if not save_offline_local():
+			offline_moves.assign(previous_moves)
+			offline_adjudication = previous_adjudication
+			offline_clock = previous_clock
+			refresh_offline_state(false)
+			message.text = "저장하지 못해 방금 동작을 되돌렸습니다."
 		render_board()
 
 func start_full_review() -> void:
 	if pending or state.is_empty() or state.moves.is_empty() or full_review.get("status", "") == "running":
+		return
+	if offline_local:
+		show_review(1)
+		message.text = "기기에 저장된 기보를 복기합니다. 정밀 등급 리뷰는 서버 연결 후 사용할 수 있습니다."
 		return
 	open_review_when_ready = true
 	return_live()
@@ -1030,6 +1105,14 @@ func show_review(ply: int, keep_game_playback := false) -> void:
 	cancel_device_recommendation(false)
 	clear_review_analysis()
 	selected = ""
+	if offline_local:
+		var review_moves: Array[String] = []
+		review_moves.assign(offline_moves.slice(0, ply))
+		review = offline_review_position(review_moves, false, ply == offline_moves.size())
+		if not review.is_empty():
+			message.text = "기기 복기 · %d/%d수" % [ply, offline_moves.size()]
+			render_board()
+		return
 	send("review", {"revision": state.revision, "ply": ply})
 
 func return_live() -> void:
@@ -1057,7 +1140,24 @@ func start_variation_at(base_ply: int) -> void:
 	clear_review_analysis()
 	variation_start_ply = base_ply
 	variation_moves = []
+	if offline_local:
+		refresh_offline_variation()
+		return
 	send("variation", {"revision": state.revision, "basePly": variation_start_ply, "moves": variation_moves})
+
+func refresh_offline_variation() -> void:
+	var combined: Array[String] = []
+	combined.assign(offline_moves.slice(0, variation_start_ply))
+	combined.append_array(variation_moves)
+	variation = offline_review_position(combined, true)
+	if variation.is_empty():
+		return
+	variation["variation"] = {"basePly": variation_start_ply, "moves": variation_moves.duplicate()}
+	variation["canUndo"] = not variation_moves.is_empty()
+	selected = ""
+	message.text = "기기 자유 분석 · 초와 한을 번갈아 둘 수 있습니다."
+	schedule_variation_evaluation()
+	render_board()
 
 func start_retry() -> void:
 	if pending or review.is_empty() or not variation.is_empty() or view_ply() < 1:
@@ -1100,6 +1200,10 @@ func play_variation_move(move: String) -> void:
 		return
 	var next_moves := variation_moves.duplicate()
 	next_moves.append(move)
+	if offline_local:
+		variation_moves.assign(next_moves)
+		refresh_offline_variation()
+		return
 	send("variation", {"revision": state.revision, "basePly": variation_start_ply, "moves": next_moves})
 
 func undo_variation() -> void:
@@ -1107,6 +1211,10 @@ func undo_variation() -> void:
 		return
 	var next_moves := variation_moves.duplicate()
 	next_moves.pop_back()
+	if offline_local:
+		variation_moves.assign(next_moves)
+		refresh_offline_variation()
+		return
 	send("variation", {"revision": state.revision, "basePly": variation_start_ply, "moves": next_moves})
 
 func resume_review() -> void:
@@ -1673,7 +1781,7 @@ func render_position(state: Dictionary) -> void:
 	action_buttons[4].disabled = action_buttons[4].disabled or not state.ai.status in ["paused", "error"]
 	device_recommend.disabled = local_match_active() or not variation.is_empty() or not device_engine.available() or device_engine.busy() or state.outcome.over or state.legalMoves.is_empty()
 	device_cancel.disabled = not variation.is_empty() or not device_engine.busy()
-	full_review_start.text = "리뷰 다시 보기" if full_review.get("status", "") == "complete" else "게임 리뷰 시작"
+	full_review_start.text = "기보 복기 시작" if offline_local else ("리뷰 다시 보기" if full_review.get("status", "") == "complete" else "게임 리뷰 시작")
 	full_review_start.disabled = local_match_active() or pending or self.state.moves.is_empty() or full_review.get("status", "") == "running"
 	full_review_cancel.disabled = pending or full_review.get("status", "") != "running"
 	review_export_button.disabled = pending or full_review.get("status", "") != "complete"
@@ -1707,7 +1815,7 @@ func render_position(state: Dictionary) -> void:
 	review_buttons[1].disabled = pending or view_ply() == 0
 	review_buttons[2].disabled = pending or review.is_empty() or view_ply() >= self.state.moves.size()
 	review_buttons[3].disabled = pending or review.is_empty()
-	review_analysis_button.disabled = pending or review.is_empty() or view_ply() < 1
+	review_analysis_button.disabled = offline_local or pending or review.is_empty() or view_ply() < 1
 	for button in review_buttons:
 		button.disabled = button.disabled or not variation.is_empty()
 	review_analysis_button.disabled = review_analysis_button.disabled or not variation.is_empty()

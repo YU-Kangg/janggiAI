@@ -125,7 +125,7 @@ public:
         result["fen"] = String(pos.fen().c_str());
         result["turn"] = cho_turn ? "cho" : "han";
         result["inCheck"] = bool(pos.checkers());
-        result["bikjang"] = false;
+        result["bikjang"] = pos.bikjang();
         result["legalMoves"] = legal;
         result["outcome"] = ending;
         return result;
