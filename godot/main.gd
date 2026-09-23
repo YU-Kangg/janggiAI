@@ -9,6 +9,8 @@ var selected := ""
 var pending := false
 var api := HTTPRequest.new()
 var endpoint := LineEdit.new()
+var server_controls := VBoxContainer.new()
+var server_toggle := Button.new()
 var status := Label.new()
 var message := Label.new()
 var score_panel := Label.new()
@@ -25,6 +27,7 @@ var cho_name := LineEdit.new()
 var han_name := LineEdit.new()
 var clock_panel := Label.new()
 var game_mode_tabs := TabContainer.new()
+var game_setup_toggle := Button.new()
 var ai_game_panel := VBoxContainer.new()
 var local_game_panel := VBoxContainer.new()
 var ai_setup_summary := Label.new()
@@ -130,6 +133,14 @@ func add_section_title(parent: Control, caption: String) -> void:
 	label.add_theme_color_override("font_color", Color("7a5448"))
 	parent.add_child(label)
 
+func toggle_server_controls() -> void:
+	server_controls.visible = not server_controls.visible
+	server_toggle.text = "서버 설정 접기" if server_controls.visible else "서버 기능 연결"
+
+func toggle_game_setup() -> void:
+	game_mode_tabs.visible = not game_mode_tabs.visible
+	game_setup_toggle.text = "대국 설정 접기" if game_mode_tabs.visible else "새 대국 설정"
+
 func cream_box(background: Color, border := Color("ead6c5"), radius := 14, border_width := 1) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = background
@@ -209,11 +220,17 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--server="):
 			endpoint.text = arg.trim_prefix("--server=")
-	column.add_child(endpoint)
+	server_toggle.text = "서버 기능 연결"
+	server_toggle.pressed.connect(toggle_server_controls)
+	column.add_child(server_toggle)
+	server_controls.add_theme_constant_override("separation", 8)
+	server_controls.visible = false
+	column.add_child(server_controls)
+	server_controls.add_child(endpoint)
 	var connect_button := Button.new()
 	connect_button.text = "서버 연결 / 다시 시도"
 	connect_button.pressed.connect(func(): request_state())
-	column.add_child(connect_button)
+	server_controls.add_child(connect_button)
 	status.text = "서버에 연결 중…"
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(status)
@@ -222,6 +239,9 @@ func _ready() -> void:
 	evaluation_graph.ply_selected.connect(show_review)
 	review_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	review_method_notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	game_setup_toggle.text = "대국 설정 접기"
+	game_setup_toggle.pressed.connect(toggle_game_setup)
+	column.add_child(game_setup_toggle)
 	game_mode_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	column.add_child(game_mode_tabs)
 	ai_game_panel.name = "AI 대전"
@@ -455,6 +475,7 @@ func _ready() -> void:
 	review_file_controls.add_child(review_import_button)
 	review_archive_workspace.add_child(review_file_controls)
 	new_game_dialog.confirmed.connect(confirm_new_game)
+	new_game_dialog.title = "새 대국 확인"
 	new_game_dialog.get_ok_button().text = "시작"
 	new_game_dialog.get_cancel_button().text = "취소"
 	add_child(new_game_dialog)
@@ -484,9 +505,15 @@ func _ready() -> void:
 	setup_dialog.add_child(setup_form)
 	add_child(setup_dialog)
 	resign_dialog.dialog_text = "현재 차례 진영이 기권할까요?"
+	resign_dialog.title = "기권 확인"
+	resign_dialog.get_ok_button().text = "기권"
+	resign_dialog.get_cancel_button().text = "취소"
 	resign_dialog.confirmed.connect(func(): act("resign", {"side": state.get("turn", "cho")}))
 	add_child(resign_dialog)
 	draw_dialog.dialog_text = "양쪽이 합의한 무승부로 대국을 종료할까요?"
+	draw_dialog.title = "무승부 확인"
+	draw_dialog.get_ok_button().text = "무승부"
+	draw_dialog.get_cancel_button().text = "취소"
 	draw_dialog.confirmed.connect(func(): act("draw"))
 	add_child(draw_dialog)
 	api.timeout = 8.0
@@ -528,6 +555,8 @@ func sync_new_game_controls() -> void:
 	if state.is_empty():
 		return
 	game_mode_tabs.current_tab = 1 if state.get("mode", "ai") == "local" else 0
+	game_mode_tabs.visible = false
+	game_setup_toggle.text = "새 대국 설정"
 	ai_difficulty.select(maxi(["quick", "normal", "strong"].find(str(state.get("aiLevel", "normal"))), 0))
 	selected_cho_setup = str(state.get("setup", {}).get("cho", "nbbn"))
 	selected_han_setup = str(state.get("setup", {}).get("han", "nbbn"))
@@ -732,6 +761,8 @@ func start_offline_local() -> void:
 		else:
 			message.text = "로컬 대국을 시작했지만 기기에 저장할 수 없습니다."
 		render_board()
+		game_mode_tabs.visible = false
+		game_setup_toggle.text = "새 대국 설정"
 
 func sync_offline_clock() -> void:
 	if not offline_local or offline_time_control == null or state.is_empty() or state.outcome.over:
@@ -1787,12 +1818,18 @@ func render_position(state: Dictionary) -> void:
 			score_panel.text += " · 기기 고전평가 강제승패 %s" % str(variation_evaluation.cho)
 	for button in action_buttons:
 		button.disabled = not review.is_empty() or (pending and current_path != "game")
+	var local_mode: bool = self.state.get("mode", "") == "local"
+	action_buttons[1].visible = not self.state.outcome.over
+	action_buttons[3].visible = not local_mode
+	action_buttons[4].visible = not local_mode
 	action_buttons[1].disabled = action_buttons[1].disabled or ai_turn or state.outcome.over or state.inCheck
 	action_buttons[2].disabled = action_buttons[2].disabled or not state.canUndo
 	action_buttons[3].disabled = action_buttons[3].disabled or state.ai.status != "thinking"
 	action_buttons[4].disabled = action_buttons[4].disabled or not state.ai.status in ["paused", "error"]
 	device_recommend.disabled = local_match_active() or not variation.is_empty() or not device_engine.available() or device_engine.busy() or state.outcome.over or state.legalMoves.is_empty()
 	device_cancel.disabled = not variation.is_empty() or not device_engine.busy()
+	device_recommend.visible = not local_mode or not review.is_empty()
+	device_cancel.visible = not local_mode or not review.is_empty()
 	full_review_start.text = "기보 복기 시작" if offline_local else ("리뷰 다시 보기" if full_review.get("status", "") == "complete" else "게임 리뷰 시작")
 	full_review_start.disabled = local_match_active() or pending or self.state.moves.is_empty() or full_review.get("status", "") == "running"
 	full_review_cancel.disabled = pending or full_review.get("status", "") != "running"
@@ -1855,3 +1892,6 @@ func render_position(state: Dictionary) -> void:
 	resign_button.disabled = pending or not local_match_active()
 	draw_button.disabled = pending or not local_match_active()
 	rematch_button.disabled = pending or state.get("mode", "") != "local" or not state.outcome.over
+	resign_button.visible = local_match_active()
+	draw_button.visible = local_match_active()
+	rematch_button.visible = local_mode and self.state.outcome.over
