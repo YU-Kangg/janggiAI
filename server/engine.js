@@ -25,7 +25,7 @@ export function parseAnalysis(output, startFen, moves) {
 
 // Small local prototype: each request owns its engine process and search state.
 // Replace with a bounded worker pool when adding server reviews.
-export function runEngine(moves, analyze = false, startFen = initialFen(), { signal } = {}) {
+export function runEngine(moves, analyze = false, startFen = initialFen(), { signal, movetimeMs = 300 } = {}) {
   if (signal?.aborted) return Promise.reject(new DOMException('분석을 취소했습니다.', 'AbortError'));
   if (!Array.isArray(moves) || moves.some(move => !movePattern.test(move))) {
     return Promise.reject(new Error('잘못된 기보 형식입니다.'));
@@ -64,7 +64,7 @@ export function runEngine(moves, analyze = false, startFen = initialFen(), { sig
       'setoption name MultiPV value 1',
       'ucinewgame',
       `position fen ${startFen}${moves.length ? ` moves ${moves.join(' ')}` : ''}`,
-      ...(analyze ? ['go movetime 300'] : ['d', 'go perft 1', 'isready']),
+      ...(analyze ? [`go movetime ${Math.max(50, Math.min(3000, Math.round(movetimeMs)))}`] : ['d', 'go perft 1', 'isready']),
       '',
     ].join('\n'));
   });
@@ -88,5 +88,5 @@ export async function recommend(moves, startFen = initialFen(), options = {}) {
   if (!movePattern.test(move || '')) throw new Error('추천할 수를 찾지 못했습니다.');
   const analysis = parseAnalysis(output, startFen, moves);
   if (analysis.pv[0] !== move) throw new Error('추천 수와 평가 수순이 일치하지 않습니다.');
-  return { move, budgetMs: 300, source: 'local-server', analysis };
+  return { move, budgetMs: Math.max(50, Math.min(3000, Math.round(options.movetimeMs ?? 300))), source: 'local-server', analysis };
 }

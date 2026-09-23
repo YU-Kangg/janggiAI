@@ -9,7 +9,7 @@ const act = (game, action, data = {}) => game.act(action, { revision: game.revis
 function controlledGame() {
   const calls = [];
   const game = new Game({ recommendMove: (moves, fen, options) => new Promise((resolve, reject) => {
-    calls.push({ moves, fen, signal: options?.signal, resolve, reject });
+    calls.push({ moves, fen, signal: options?.signal, movetimeMs: options?.movetimeMs, resolve, reject });
   }) });
   return { game, calls };
 }
@@ -72,6 +72,21 @@ test('취소는 현재 판 유지, 재개 전까지 정지, 늦은 이전 결과
   calls[1].resolve({ move: 'i7h7' });
   await newDone;
   assert.deepEqual(game.moves, ['a4b4', 'i7h7']);
+});
+
+test('AI 난이도는 탐색 시간으로 전달되고 상태와 저장 기보에 유지됨', async () => {
+  const { game, calls } = controlledGame();
+  let state = await act(game, 'reset', { mode: 'ai', humanSide: 'cho', aiLevel: 'strong' });
+  assert.equal(state.aiLevel, 'strong');
+  await act(game, 'move', { move: 'a4b4' });
+  assert.equal(calls[0].signal.aborted, false);
+  assert.equal(calls[0].movetimeMs, 1000);
+  const before = game.snapshot();
+  await assert.rejects(act(game, 'reset', { aiLevel: 'impossible' }), /난이도/);
+  assert.deepEqual(game.snapshot(), before);
+  const done = game.aiJob.done;
+  calls[0].resolve({ move: 'a7b7' });
+  await done;
 });
 
 test('생각 중 무르기·새 대국은 이전 응수를 취소, 잘못된 설정은 상태를 보존', async () => {

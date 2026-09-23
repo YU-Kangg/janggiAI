@@ -116,6 +116,7 @@ export class Game {
   setup = { ...defaultSetup };
   mode = 'practice';
   humanSide = 'cho';
+  aiLevel = 'normal';
   aiStatus = 'idle';
   aiError = null;
   aiJob = null;
@@ -133,7 +134,7 @@ export class Game {
     this.now = now;
     const saved = storage?.load();
     if (saved) {
-      if (![1, 2].includes(saved.version) || saved.variant !== 'janggi' || !Array.isArray(saved.moves)
+      if (![1, 2, 3].includes(saved.version) || saved.variant !== 'janggi' || !Array.isArray(saved.moves)
         || !['practice', 'local', 'ai'].includes(saved.mode) || !['cho', 'han'].includes(saved.humanSide)
         || !Number.isSafeInteger(saved.revision) || saved.revision < 0) throw new Error('저장된 기보 형식이 올바르지 않습니다.');
       this.state = rulePosition(saved.moves, initialFen(saved.setup));
@@ -141,6 +142,8 @@ export class Game {
       this.setup = { ...saved.setup };
       this.mode = saved.mode;
       this.humanSide = saved.humanSide;
+      this.aiLevel = saved.version >= 3 ? saved.aiLevel ?? 'normal' : 'normal';
+      if (!['quick', 'normal', 'strong'].includes(this.aiLevel)) throw new Error('저장된 AI 난이도가 올바르지 않습니다.');
       this.revision = saved.revision + 1;
       this.adjudication = saved.version >= 2 ? saved.adjudication ?? null : null;
       this.timeControl = saved.version >= 2 ? saved.timeControl ?? null : null;
@@ -153,9 +156,9 @@ export class Game {
   }
 
   persist(moves, setup = this.setup, mode = this.mode, humanSide = this.humanSide, adjudication = this.adjudication,
-    timeControl = this.timeControl, clockRemaining = this.clockRemaining, players = this.players) {
+    timeControl = this.timeControl, clockRemaining = this.clockRemaining, players = this.players, aiLevel = this.aiLevel) {
     this.storage?.save({
-      version: 2, variant: 'janggi', moves, setup, mode, humanSide, adjudication,
+      version: 3, variant: 'janggi', moves, setup, mode, humanSide, adjudication, aiLevel,
       timeControl, clockRemaining: { ...clockRemaining }, revision: this.revision + 1,
       players: { ...players },
     });
@@ -173,7 +176,7 @@ export class Game {
     const outcome = this.adjudication ?? this.state.outcome;
     return {
       ...this.state, outcome, initialFen: initialFen(this.setup), setup: { ...this.setup }, moves: [...this.moves], revision: this.revision, variant: 'janggi',
-      mode: this.mode, humanSide: this.humanSide,
+      mode: this.mode, humanSide: this.humanSide, aiLevel: this.aiLevel,
       players: { ...this.players },
       clock: {
         enabled: this.timeControl !== null,
@@ -235,7 +238,8 @@ export class Game {
     const moves = [...this.moves];
     const fen = initialFen(this.setup);
     // Search outside the HTTP queue so cancel/undo/reset remain responsive.
-    job.done = Promise.resolve().then(() => this.recommendMove(moves, fen, { signal: job.controller.signal }))
+    const movetimeMs = { quick: 100, normal: 300, strong: 1000 }[this.aiLevel];
+    job.done = Promise.resolve().then(() => this.recommendMove(moves, fen, { signal: job.controller.signal, movetimeMs }))
       .then(result => {
         if (this.aiJob !== job || this.revision !== job.revision) return;
         if (!this.state.legalMoves.includes(result.move)) throw new Error('합법 수가 아닌 AI 응수를 받았습니다.');
@@ -437,6 +441,7 @@ export class Game {
     let nextSetup = this.setup;
     let nextMode = this.mode;
     let nextSide = this.humanSide;
+    let nextAiLevel = this.aiLevel;
     let nextPlayers = this.players;
     let nextTimeControl = this.timeControl;
     let nextClockRemaining = { ...this.clockRemaining };
@@ -455,8 +460,10 @@ export class Game {
       nextSetup = data.setup ?? this.setup;
       nextMode = data.mode ?? this.mode;
       nextSide = data.humanSide ?? this.humanSide;
+      nextAiLevel = data.aiLevel ?? this.aiLevel;
       nextPlayers = data.players ?? this.players;
       if (!['practice', 'local', 'ai'].includes(nextMode) || !['cho', 'han'].includes(nextSide)) throw fail('대국 방식 또는 진영이 올바르지 않습니다.', 400);
+      if (!['quick', 'normal', 'strong'].includes(nextAiLevel)) throw fail('AI 난이도가 올바르지 않습니다.', 400);
       if (!nextPlayers || typeof nextPlayers.cho !== 'string' || typeof nextPlayers.han !== 'string'
         || !nextPlayers.cho.trim() || !nextPlayers.han.trim() || nextPlayers.cho.trim().length > 12 || nextPlayers.han.trim().length > 12) {
         throw fail('대국자 이름은 1~12자로 입력하세요.', 400);
@@ -468,12 +475,13 @@ export class Game {
     else throw Object.assign(new Error('지원하지 않는 동작입니다.'), { status: 404 });
     // Commit only after the engine has successfully reconstructed the new board.
     const nextState = rulePosition(nextMoves, initialFen(nextSetup));
-    this.persist(nextMoves, nextSetup, nextMode, nextSide, null, nextTimeControl, nextClockRemaining, nextPlayers);
+    this.persist(nextMoves, nextSetup, nextMode, nextSide, null, nextTimeControl, nextClockRemaining, nextPlayers, nextAiLevel);
     this.stopAi();
     this.moves = nextMoves;
     this.setup = { cho: nextSetup.cho, han: nextSetup.han };
     this.mode = nextMode;
     this.humanSide = nextSide;
+    this.aiLevel = nextAiLevel;
     this.players = nextPlayers;
     this.state = nextState;
     this.adjudication = null;

@@ -17,6 +17,7 @@ var review_method_notice := Label.new()
 var key_move_status := Label.new()
 var grid := GridContainer.new()
 var side := OptionButton.new()
+var ai_difficulty := OptionButton.new()
 var cho_setup := OptionButton.new()
 var han_setup := OptionButton.new()
 var time_control := OptionButton.new()
@@ -233,6 +234,11 @@ func _ready() -> void:
 	side.add_item("초로 AI 대국")
 	side.add_item("한으로 AI 대국")
 	ai_game_panel.add_child(side)
+	ai_difficulty.add_item("빠르게 · 약 0.1초")
+	ai_difficulty.add_item("보통 · 약 0.3초")
+	ai_difficulty.add_item("강하게 · 약 1초")
+	ai_difficulty.select(1)
+	ai_game_panel.add_child(ai_difficulty)
 	ai_setup_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	ai_game_panel.add_child(ai_setup_summary)
 	var ai_setup_button := Button.new()
@@ -522,6 +528,7 @@ func sync_new_game_controls() -> void:
 	if state.is_empty():
 		return
 	game_mode_tabs.current_tab = 1 if state.get("mode", "ai") == "local" else 0
+	ai_difficulty.select(maxi(["quick", "normal", "strong"].find(str(state.get("aiLevel", "normal"))), 0))
 	selected_cho_setup = str(state.get("setup", {}).get("cho", "nbbn"))
 	selected_han_setup = str(state.get("setup", {}).get("han", "nbbn"))
 	cho_setup.select(arrangement_index(selected_cho_setup))
@@ -549,6 +556,9 @@ func selected_time_control() -> Variant:
 			return {"initialSeconds": 1800, "incrementSeconds": 0}
 		_:
 			return null
+
+func selected_ai_level() -> String:
+	return ["quick", "normal", "strong"][clampi(ai_difficulty.selected, 0, 2)]
 
 func local_initial_fen(setup: Dictionary) -> String:
 	var han: String = str(setup.get("han", "nbbn"))
@@ -585,7 +595,7 @@ func refresh_offline_state(increment_revision := false) -> bool:
 		"bikjang": position.get("bikjang", false), "legalMoves": Array(position.legalMoves),
 		"points": material_points(str(position.fen)), "outcome": outcome,
 		"initialFen": initial_fen, "setup": setup, "moves": offline_moves.duplicate(),
-		"revision": revision, "variant": "janggi", "mode": "local", "humanSide": "cho",
+		"revision": revision, "variant": "janggi", "mode": "local", "humanSide": "cho", "aiLevel": "normal",
 		"players": {"cho": cho_name.text.strip_edges(), "han": han_name.text.strip_edges()},
 		"clock": {
 			"enabled": offline_time_control != null, "choMs": int(offline_clock.cho), "hanMs": int(offline_clock.han),
@@ -763,6 +773,7 @@ func confirm_new_game() -> void:
 	act("reset", {
 		"mode": pending_new_mode,
 		"humanSide": "cho" if side.selected == 0 else "han",
+		"aiLevel": selected_ai_level(),
 		"setup": {"cho": selected_cho_setup, "han": selected_han_setup},
 		"players": {"cho": cho_name.text.strip_edges(), "han": han_name.text.strip_edges()},
 		"timeControl": selected_time_control() if pending_new_mode == "local" else null,
@@ -920,6 +931,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		pending_ai_start_after_connect = false
 		act("reset", {
 			"mode": "ai", "humanSide": "cho" if side.selected == 0 else "han",
+			"aiLevel": selected_ai_level(),
 			"setup": {"cho": selected_cho_setup, "han": selected_han_setup},
 			"players": {"cho": cho_name.text.strip_edges(), "han": han_name.text.strip_edges()},
 			"timeControl": null,
