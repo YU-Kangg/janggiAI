@@ -11,9 +11,16 @@ var api := HTTPRequest.new()
 var endpoint := LineEdit.new()
 var server_controls := VBoxContainer.new()
 var server_toggle := Button.new()
+var account_badge := Label.new()
+var current_role := "user"
+var screen_mode := "home"
+var home_button := Button.new()
+var play_button := Button.new()
 var status := Label.new()
 var message := Label.new()
 var score_panel := Label.new()
+var match_setup_panel := Label.new()
+var last_move_panel := Label.new()
 var review_summary := Label.new()
 var review_method_notice := Label.new()
 var key_move_status := Label.new()
@@ -52,6 +59,7 @@ var rematch_button := Button.new()
 var resign_dialog := ConfirmationDialog.new()
 var draw_dialog := ConfirmationDialog.new()
 var action_buttons: Array[Button] = []
+var game_actions := HFlowContainer.new()
 var squares: Dictionary = {}
 var timer := Timer.new()
 var new_game_dialog := ConfirmationDialog.new()
@@ -134,12 +142,56 @@ func add_section_title(parent: Control, caption: String) -> void:
 	parent.add_child(label)
 
 func toggle_server_controls() -> void:
+	if current_role != "admin" or screen_mode != "home":
+		return
 	server_controls.visible = not server_controls.visible
 	server_toggle.text = "서버 설정 접기" if server_controls.visible else "서버 기능 연결"
 
 func toggle_game_setup() -> void:
+	if screen_mode != "home":
+		return
 	game_mode_tabs.visible = not game_mode_tabs.visible
 	game_setup_toggle.text = "대국 설정 접기" if game_mode_tabs.visible else "새 대국 설정"
+
+func set_account_role(role: String) -> void:
+	current_role = "admin" if role == "admin" else "user"
+	account_badge.text = "관리자 계정 · 개발자 기능" if current_role == "admin" else "일반 사용자"
+	if current_role != "admin":
+		server_controls.visible = false
+		server_toggle.text = "서버 기능 연결"
+	sync_screen_visibility()
+
+func show_home_screen() -> void:
+	screen_mode = "home"
+	sync_screen_visibility()
+
+func show_game_screen() -> void:
+	if state.is_empty():
+		return
+	screen_mode = "play"
+	review = {}
+	analysis_preview = {}
+	variation = {}
+	sync_screen_visibility()
+	render_board()
+
+func sync_screen_visibility() -> void:
+	var playing := screen_mode == "play"
+	account_badge.visible = not playing
+	home_button.visible = playing
+	play_button.visible = not playing and not state.is_empty()
+	server_toggle.visible = not playing and current_role == "admin"
+	server_controls.visible = not playing and current_role == "admin" and server_controls.visible
+	status.visible = playing or current_role == "admin"
+	game_setup_toggle.visible = not playing
+	if playing:
+		game_mode_tabs.visible = false
+		game_setup_toggle.text = "새 대국 설정"
+	review_tabs.visible = not playing
+	message.visible = not playing
+	match_setup_panel.visible = playing
+	last_move_panel.visible = playing
+	game_actions.visible = playing
 
 func cream_box(background: Color, border := Color("ead6c5"), radius := 14, border_width := 1) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
@@ -216,10 +268,22 @@ func _ready() -> void:
 	title.add_theme_font_size_override("font_size", 24)
 	title.add_theme_color_override("font_color", Color("845847"))
 	column.add_child(title)
+	var navigation := HFlowContainer.new()
+	column.add_child(navigation)
+	account_badge.text = "일반 사용자"
+	navigation.add_child(account_badge)
+	home_button.text = "메인으로"
+	home_button.pressed.connect(show_home_screen)
+	navigation.add_child(home_button)
+	play_button.text = "대국 화면"
+	play_button.pressed.connect(show_game_screen)
+	navigation.add_child(play_button)
 	endpoint.text = "http://127.0.0.1:3000"
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--server="):
 			endpoint.text = arg.trim_prefix("--server=")
+		elif arg == "--role=admin":
+			current_role = "admin"
 	server_toggle.text = "서버 기능 연결"
 	server_toggle.pressed.connect(toggle_server_controls)
 	column.add_child(server_toggle)
@@ -234,6 +298,10 @@ func _ready() -> void:
 	status.text = "서버에 연결 중…"
 	status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(status)
+	match_setup_panel.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(match_setup_panel)
+	last_move_panel.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(last_move_panel)
 	score_panel.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(score_panel)
 	evaluation_graph.ply_selected.connect(show_review)
@@ -312,32 +380,31 @@ func _ready() -> void:
 	grid.columns = 9
 	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	column.add_child(grid)
-	var actions := HFlowContainer.new()
-	column.add_child(actions)
-	add_action(actions, "한수쉼", pass_turn)
-	add_action(actions, "무르기", func(): act("undo"))
-	add_action(actions, "AI 취소", func(): act("cancel-ai"))
-	add_action(actions, "AI 재개", func(): act("resume-ai"))
+	column.add_child(game_actions)
+	add_action(game_actions, "한수쉼", pass_turn)
+	add_action(game_actions, "무르기", func(): act("undo"))
+	add_action(game_actions, "AI 취소", func(): act("cancel-ai"))
+	add_action(game_actions, "AI 재개", func(): act("resume-ai"))
 	resign_button.text = "기권"
 	resign_button.custom_minimum_size.y = 44
 	resign_button.pressed.connect(func(): resign_dialog.popup_centered())
-	actions.add_child(resign_button)
+	game_actions.add_child(resign_button)
 	draw_button.text = "합의 무승부"
 	draw_button.custom_minimum_size.y = 44
 	draw_button.pressed.connect(func(): draw_dialog.popup_centered())
-	actions.add_child(draw_button)
+	game_actions.add_child(draw_button)
 	rematch_button.text = "같은 설정 재대국"
 	rematch_button.custom_minimum_size.y = 44
 	rematch_button.pressed.connect(func(): open_new_game_dialog(str(state.get("mode", "local"))))
-	actions.add_child(rematch_button)
+	game_actions.add_child(rematch_button)
 	device_recommend.text = "기기 추천"
 	device_recommend.custom_minimum_size.y = 44
 	device_recommend.pressed.connect(start_device_recommendation)
-	actions.add_child(device_recommend)
+	game_actions.add_child(device_recommend)
 	device_cancel.text = "추천 취소"
 	device_cancel.custom_minimum_size.y = 44
 	device_cancel.pressed.connect(cancel_device_recommendation)
-	actions.add_child(device_cancel)
+	game_actions.add_child(device_cancel)
 	full_review_start.text = "게임 리뷰 시작"
 	full_review_start.custom_minimum_size.y = 44
 	full_review_start.pressed.connect(start_full_review)
@@ -523,9 +590,13 @@ func _ready() -> void:
 	timer.timeout.connect(request_state)
 	add_child(timer)
 	timer.start()
+	set_account_role(current_role)
 	render_board()
 	if not load_offline_local():
 		request_state()
+	else:
+		screen_mode = "play" if not state.outcome.over else "home"
+		sync_screen_visibility()
 
 func arrangement_value(index: int) -> String:
 	return SETUPS[clampi(index, 0, 3)]
@@ -742,6 +813,7 @@ func load_offline_local_file(path: String) -> bool:
 	return true
 
 func start_offline_local() -> void:
+	screen_mode = "play"
 	offline_local = true
 	offline_moves = []
 	offline_adjudication = {}
@@ -763,6 +835,7 @@ func start_offline_local() -> void:
 		render_board()
 		game_mode_tabs.visible = false
 		game_setup_toggle.text = "새 대국 설정"
+		sync_screen_visibility()
 
 func sync_offline_clock() -> void:
 	if not offline_local or offline_time_control == null or state.is_empty() or state.outcome.over:
@@ -788,6 +861,8 @@ func open_new_game_dialog(mode: String) -> void:
 	new_game_dialog.popup_centered()
 
 func confirm_new_game() -> void:
+	screen_mode = "play"
+	sync_screen_visibility()
 	if pending_new_mode == "local" and ClassDB.class_exists("JanggiNative"):
 		start_offline_local()
 		return
@@ -1722,6 +1797,8 @@ func render_position(state: Dictionary) -> void:
 	if state.is_empty():
 		score_panel.text = ""
 		clock_panel.text = ""
+		match_setup_panel.text = ""
+		last_move_panel.text = ""
 		for button in action_buttons:
 			button.disabled = true
 		device_recommend.disabled = true
@@ -1747,6 +1824,10 @@ func render_position(state: Dictionary) -> void:
 	var ai_turn: bool = variation.is_empty() and state.mode == "ai" and state.turn != state.humanSide
 	var flipped: bool = state.mode == "ai" and state.humanSide == "han"
 	var labels := {"k": "궁", "a": "사", "r": "차", "n": "마", "b": "상", "c": "포", "p": "졸"}
+	var live_last_move := ""
+	if screen_mode == "play" and review.is_empty() and variation.is_empty() and analysis_preview.is_empty() and not state.moves.is_empty():
+		live_last_move = str(state.moves[-1])
+	var live_last_pair := split_move(live_last_move)
 	for row in range(10):
 		for file in range(9):
 			var square := String.chr(97 + (8 - file if flipped else file)) + str(row + 1 if flipped else 10 - row)
@@ -1762,6 +1843,10 @@ func render_position(state: Dictionary) -> void:
 			button.add_theme_stylebox_override("disabled", board_box(square_color.darkened(0.03)))
 			button.add_theme_color_override("font_color", Color("5687a0") if piece != "" and piece == piece.to_upper() else Color("c8796d") if piece != "" else Color("ccb8a6"))
 			button.add_theme_color_override("font_disabled_color", Color("6f9aaf") if piece != "" and piece == piece.to_upper() else Color("ce8b81") if piece != "" else Color("cfbdad"))
+			if live_last_pair.size() == 2 and square == live_last_pair[0]:
+				button.modulate = Color("ffd36f")
+			elif live_last_pair.size() == 2 and square == live_last_pair[1]:
+				button.modulate = Color("ff9f80")
 			if square == selected or (selected != "" and state.legalMoves.has(selected + square)):
 				button.modulate = Color("c8efa9")
 			var recommendation := split_move(recommended_move)
@@ -1789,6 +1874,14 @@ func render_position(state: Dictionary) -> void:
 			grid.add_child(button)
 			squares[square] = button
 	var players: Dictionary = state.get("players", {"cho": "초", "han": "한"})
+	var setup: Dictionary = state.get("setup", {})
+	match_setup_panel.text = "기물 배치 · 초 %s / 한 %s" % [arrangement_label(str(setup.get("cho", "nbbn"))), arrangement_label(str(setup.get("han", "nbbn")))]
+	last_move_panel.text = ""
+	if live_last_pair.size() == 2:
+		var moved_side := "초" if state.moves.size() % 2 == 1 else "한"
+		var destination_piece: String = str(pieces.get(live_last_pair[1], ""))
+		var piece_name := "병" if destination_piece == "p" else str(labels.get(destination_piece.to_lower(), "기물"))
+		last_move_panel.text = "직전 착수 · %s %s · 노란 출발칸 → 주황 도착칸" % [moved_side, piece_name]
 	status.text = "%s(%s) 차례 · %d수" % [str(players.get(state.turn, state.turn)), "초" if state.turn == "cho" else "한", state.moves.size()]
 	status.text += " · 로컬 대국" if state.get("mode", "") == "local" else " · AI %s" % str(state.ai.status)
 	if state.inCheck:
@@ -1895,3 +1988,4 @@ func render_position(state: Dictionary) -> void:
 	resign_button.visible = local_match_active()
 	draw_button.visible = local_match_active()
 	rematch_button.visible = local_mode and self.state.outcome.over
+	sync_screen_visibility()
