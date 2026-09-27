@@ -14,6 +14,7 @@ var server_toggle := Button.new()
 var account_badge := Label.new()
 var current_role := "user"
 var screen_mode := "home"
+var home_section := "dashboard"
 var home_button := Button.new()
 var play_button := Button.new()
 var status := Label.new()
@@ -133,6 +134,12 @@ var review_key_controls := HFlowContainer.new()
 var review_analysis_controls := HFlowContainer.new()
 var review_playback_controls := HFlowContainer.new()
 var review_file_controls := HFlowContainer.new()
+var app_background := ColorRect.new()
+var app_title := Label.new()
+var home_dashboard := VBoxContainer.new()
+var home_stats := Label.new()
+var home_recent := Label.new()
+var board_credit := RichTextLabel.new()
 
 func add_section_title(parent: Control, caption: String) -> void:
 	var label := Label.new()
@@ -140,6 +147,44 @@ func add_section_title(parent: Control, caption: String) -> void:
 	label.add_theme_font_size_override("font_size", 18)
 	label.add_theme_color_override("font_color", Color("7a5448"))
 	parent.add_child(label)
+
+func dashboard_box(background: Color, radius := 16) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = background
+	box.border_color = Color("484b48")
+	box.set_border_width_all(1)
+	box.set_corner_radius_all(radius)
+	box.content_margin_left = 16
+	box.content_margin_right = 16
+	box.content_margin_top = 14
+	box.content_margin_bottom = 14
+	return box
+
+func style_dashboard_button(button: Button, primary := false) -> void:
+	button.custom_minimum_size.y = 76 if not primary else 64
+	button.add_theme_font_size_override("font_size", 18 if not primary else 22)
+	button.add_theme_color_override("font_color", Color.WHITE)
+	button.add_theme_color_override("font_hover_color", Color.WHITE)
+	button.add_theme_stylebox_override("normal", dashboard_box(Color("69ad45") if primary else Color("303330")))
+	button.add_theme_stylebox_override("hover", dashboard_box(Color("79bd54") if primary else Color("3b3e3b")))
+	button.add_theme_stylebox_override("pressed", dashboard_box(Color("57963a") if primary else Color("262926")))
+
+func show_home_setup(tab := 0) -> void:
+	screen_mode = "home"
+	home_section = "setup"
+	game_mode_tabs.current_tab = tab
+	sync_screen_visibility()
+	call_deferred("reveal_home_control", game_mode_tabs)
+
+func show_home_review(tab := 0) -> void:
+	screen_mode = "home"
+	home_section = "review"
+	review_tabs.current_tab = tab
+	sync_screen_visibility()
+	call_deferred("reveal_home_control", review_tabs)
+
+func reveal_home_control(control: Control) -> void:
+	page_scroll.ensure_control_visible(control)
 
 func toggle_server_controls() -> void:
 	if current_role != "admin" or screen_mode != "home":
@@ -150,8 +195,10 @@ func toggle_server_controls() -> void:
 func toggle_game_setup() -> void:
 	if screen_mode != "home":
 		return
-	game_mode_tabs.visible = not game_mode_tabs.visible
-	game_setup_toggle.text = "대국 설정 접기" if game_mode_tabs.visible else "새 대국 설정"
+	if home_section == "setup":
+		show_home_screen()
+	else:
+		show_home_setup(game_mode_tabs.current_tab)
 
 func set_account_role(role: String) -> void:
 	current_role = "admin" if role == "admin" else "user"
@@ -163,6 +210,7 @@ func set_account_role(role: String) -> void:
 
 func show_home_screen() -> void:
 	screen_mode = "home"
+	home_section = "dashboard"
 	sync_screen_visibility()
 
 func show_game_screen() -> void:
@@ -177,20 +225,31 @@ func show_game_screen() -> void:
 
 func sync_screen_visibility() -> void:
 	var playing := screen_mode == "play"
-	account_badge.visible = not playing
+	theme = create_app_theme() if playing else create_home_theme()
+	app_background.color = Color("fff7e8") if playing else Color("191b19")
+	app_title.text = "고양이 장기 · 대국" if playing else "장기"
+	app_title.add_theme_color_override("font_color", Color("845847") if playing else Color("f7f4ee"))
+	home_dashboard.visible = not playing and home_section == "dashboard"
+	account_badge.visible = not playing and home_section == "dashboard"
 	home_button.visible = playing
-	play_button.visible = not playing and not state.is_empty()
-	server_toggle.visible = not playing and current_role == "admin"
-	server_controls.visible = not playing and current_role == "admin" and server_controls.visible
+	play_button.visible = not playing and home_section == "dashboard" and not state.is_empty()
+	server_toggle.visible = not playing and home_section == "dashboard" and current_role == "admin"
+	server_controls.visible = not playing and home_section == "dashboard" and current_role == "admin" and server_controls.visible
 	status.visible = playing or current_role == "admin"
-	game_setup_toggle.visible = not playing
+	game_setup_toggle.visible = not playing and home_section == "setup"
+	game_setup_toggle.text = "메인으로 돌아가기"
+	game_mode_tabs.visible = not playing and home_section == "setup"
 	if playing:
 		game_mode_tabs.visible = false
 		game_setup_toggle.text = "새 대국 설정"
-	review_tabs.visible = not playing
-	message.visible = not playing
+	review_tabs.visible = not playing and home_section == "review"
+	message.visible = not playing and home_section == "review"
 	match_setup_panel.visible = playing
 	last_move_panel.visible = playing
+	score_panel.visible = playing
+	clock_panel.visible = playing
+	grid.visible = playing
+	board_credit.visible = playing
 	game_actions.visible = playing
 
 func cream_box(background: Color, border := Color("ead6c5"), radius := 14, border_width := 1) -> StyleBoxFlat:
@@ -234,6 +293,33 @@ func create_app_theme() -> Theme:
 		app_theme.set_color("title_color", dialog_type, Color("684a40"))
 	return app_theme
 
+func create_home_theme() -> Theme:
+	var home_theme := create_app_theme()
+	home_theme.set_color("font_color", "Label", Color("eeeae3"))
+	home_theme.set_color("font_color", "Button", Color("f5f2ec"))
+	home_theme.set_color("font_hover_color", "Button", Color.WHITE)
+	home_theme.set_color("font_pressed_color", "Button", Color.WHITE)
+	home_theme.set_color("font_disabled_color", "Button", Color("777a77"))
+	home_theme.set_stylebox("normal", "Button", dashboard_box(Color("303330")))
+	home_theme.set_stylebox("hover", "Button", dashboard_box(Color("3b3e3b")))
+	home_theme.set_stylebox("pressed", "Button", dashboard_box(Color("262926")))
+	home_theme.set_stylebox("disabled", "Button", dashboard_box(Color("242624")))
+	for control_type in ["OptionButton", "LineEdit"]:
+		home_theme.set_color("font_color", control_type, Color("f2eee8"))
+		home_theme.set_color("font_placeholder_color", control_type, Color("9c9f9c"))
+		home_theme.set_stylebox("normal", control_type, dashboard_box(Color("292c29")))
+		home_theme.set_stylebox("focus", control_type, dashboard_box(Color("343834")))
+	home_theme.set_stylebox("panel", "TabContainer", dashboard_box(Color("232523")))
+	home_theme.set_stylebox("tab_selected", "TabContainer", dashboard_box(Color("69ad45"), 12))
+	home_theme.set_stylebox("tab_unselected", "TabContainer", dashboard_box(Color("303330"), 12))
+	home_theme.set_color("font_selected_color", "TabContainer", Color.WHITE)
+	home_theme.set_color("font_unselected_color", "TabContainer", Color("c4c6c3"))
+	home_theme.set_stylebox("panel", "PopupPanel", dashboard_box(Color("252825")))
+	for dialog_type in ["Window", "AcceptDialog", "ConfirmationDialog"]:
+		home_theme.set_stylebox("panel", dialog_type, dashboard_box(Color("252825")))
+		home_theme.set_color("title_color", dialog_type, Color.WHITE)
+	return home_theme
+
 func board_box(background: Color) -> StyleBoxFlat:
 	var box := cream_box(background, Color.TRANSPARENT, 8, 0)
 	box.content_margin_left = 2
@@ -244,11 +330,10 @@ func board_box(background: Color) -> StyleBoxFlat:
 
 func _ready() -> void:
 	theme = create_app_theme()
-	var background := ColorRect.new()
-	background.color = Color("fff7e8")
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(background)
+	app_background.color = Color("191b19")
+	app_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	app_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(app_background)
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for edge in ["left", "right", "top", "bottom"]:
@@ -263,11 +348,10 @@ func _ready() -> void:
 	column.add_theme_constant_override("separation", 10)
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	page_scroll.add_child(column)
-	var title := Label.new()
-	title.text = "고양이 장기 · 냥이들의 한판"
-	title.add_theme_font_size_override("font_size", 24)
-	title.add_theme_color_override("font_color", Color("845847"))
-	column.add_child(title)
+	app_title.text = "장기"
+	app_title.add_theme_font_size_override("font_size", 30)
+	app_title.add_theme_color_override("font_color", Color("f7f4ee"))
+	column.add_child(app_title)
 	var navigation := HFlowContainer.new()
 	column.add_child(navigation)
 	account_badge.text = "일반 사용자"
@@ -278,6 +362,97 @@ func _ready() -> void:
 	play_button.text = "대국 화면"
 	play_button.pressed.connect(show_game_screen)
 	navigation.add_child(play_button)
+	home_dashboard.add_theme_constant_override("separation", 14)
+	home_dashboard.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.add_child(home_dashboard)
+	var profile := PanelContainer.new()
+	profile.add_theme_stylebox_override("panel", dashboard_box(Color("292c29")))
+	home_dashboard.add_child(profile)
+	var profile_row := HBoxContainer.new()
+	profile_row.add_theme_constant_override("separation", 14)
+	profile.add_child(profile_row)
+	var avatar := Label.new()
+	avatar.text = "將"
+	avatar.add_theme_font_size_override("font_size", 34)
+	avatar.add_theme_color_override("font_color", Color("8bc65d"))
+	profile_row.add_child(avatar)
+	var profile_text := Label.new()
+	profile_text.text = "장기 플레이어\n기본 장기 · 오프라인 대국 가능"
+	profile_text.add_theme_font_size_override("font_size", 17)
+	profile_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	profile_row.add_child(profile_text)
+	var quick_heading := Label.new()
+	quick_heading.text = "바로 시작"
+	quick_heading.add_theme_font_size_override("font_size", 22)
+	home_dashboard.add_child(quick_heading)
+	var quick_grid := GridContainer.new()
+	quick_grid.columns = 2
+	quick_grid.add_theme_constant_override("h_separation", 10)
+	quick_grid.add_theme_constant_override("v_separation", 10)
+	home_dashboard.add_child(quick_grid)
+	var ai_card := Button.new()
+	ai_card.text = "AI 대전\n엔진과 실력 겨루기"
+	ai_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	style_dashboard_button(ai_card)
+	ai_card.pressed.connect(func(): call_deferred("show_home_setup", 0))
+	quick_grid.add_child(ai_card)
+	var local_card := Button.new()
+	local_card.text = "로컬 2인\n한 기기에서 대국"
+	local_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	style_dashboard_button(local_card)
+	local_card.pressed.connect(func(): call_deferred("show_home_setup", 1))
+	quick_grid.add_child(local_card)
+	var stats_heading := Label.new()
+	stats_heading.text = "현재 기록"
+	stats_heading.add_theme_font_size_override("font_size", 22)
+	home_dashboard.add_child(stats_heading)
+	var stats_panel := PanelContainer.new()
+	stats_panel.add_theme_stylebox_override("panel", dashboard_box(Color("292c29")))
+	home_stats.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	home_stats.add_theme_font_size_override("font_size", 18)
+	stats_panel.add_child(home_stats)
+	home_dashboard.add_child(stats_panel)
+	var recent_heading := Label.new()
+	recent_heading.text = "최근 대국"
+	recent_heading.add_theme_font_size_override("font_size", 22)
+	home_dashboard.add_child(recent_heading)
+	var recent_panel := PanelContainer.new()
+	recent_panel.add_theme_stylebox_override("panel", dashboard_box(Color("292c29")))
+	home_recent.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	home_recent.add_theme_font_size_override("font_size", 17)
+	recent_panel.add_child(home_recent)
+	home_dashboard.add_child(recent_panel)
+	var tools := HBoxContainer.new()
+	tools.add_theme_constant_override("separation", 8)
+	home_dashboard.add_child(tools)
+	for spec in [["게임 리뷰", 0], ["자유 분석", 1], ["보관", 2]]:
+		var tool_button := Button.new()
+		tool_button.text = spec[0]
+		tool_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tool_button.custom_minimum_size.y = 50
+		tool_button.pressed.connect(func(): call_deferred("show_home_review", spec[1]))
+		tools.add_child(tool_button)
+	var primary_play := Button.new()
+	primary_play.text = "대국 시작"
+	style_dashboard_button(primary_play, true)
+	primary_play.pressed.connect(func(): call_deferred("show_game_screen") if not state.is_empty() else call_deferred("show_home_setup", 0))
+	home_dashboard.add_child(primary_play)
+	var bottom_navigation := HBoxContainer.new()
+	bottom_navigation.add_theme_constant_override("separation", 6)
+	home_dashboard.add_child(bottom_navigation)
+	for spec in [["홈", -1], ["새 대국", 0], ["리뷰", 1], ["분석", 2], ["보관", 3]]:
+		var nav_button := Button.new()
+		nav_button.text = spec[0]
+		nav_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		nav_button.custom_minimum_size.y = 48
+		var destination: int = spec[1]
+		if destination == -1:
+			nav_button.pressed.connect(show_home_screen)
+		elif destination == 0:
+			nav_button.pressed.connect(func(): call_deferred("show_home_setup", 0))
+		else:
+			nav_button.pressed.connect(func(): call_deferred("show_home_review", destination - 1))
+		bottom_navigation.add_child(nav_button)
 	endpoint.text = "http://127.0.0.1:3000"
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--server="):
@@ -380,13 +555,12 @@ func _ready() -> void:
 	grid.columns = 9
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	column.add_child(grid)
-	var credit := RichTextLabel.new()
-	credit.bbcode_enabled = true
-	credit.fit_content = true
-	credit.add_theme_color_override("default_color", Color("786957"))
-	credit.text = "[font_size=12]장기말 · [url=https://github.com/Kadagaden/chess-pieces]Kadagaden / chess-pieces[/url] · [url=https://creativecommons.org/licenses/by/4.0/]CC BY 4.0[/url][/font_size]"
-	credit.meta_clicked.connect(func(url): OS.shell_open(str(url)))
-	column.add_child(credit)
+	board_credit.bbcode_enabled = true
+	board_credit.fit_content = true
+	board_credit.add_theme_color_override("default_color", Color("786957"))
+	board_credit.text = "[font_size=12]장기말 · [url=https://github.com/Kadagaden/chess-pieces]Kadagaden / chess-pieces[/url] · [url=https://creativecommons.org/licenses/by/4.0/]CC BY 4.0[/url][/font_size]"
+	board_credit.meta_clicked.connect(func(url): OS.shell_open(str(url)))
+	column.add_child(board_credit)
 	column.add_child(game_actions)
 	add_action(game_actions, "한수쉼", pass_turn)
 	add_action(game_actions, "무르기", func(): act("undo"))
@@ -1804,6 +1978,8 @@ func render_position(state: Dictionary) -> void:
 	if state.is_empty():
 		score_panel.text = ""
 		clock_panel.text = ""
+		home_stats.text = "아직 진행 중인 대국이 없습니다."
+		home_recent.text = "새 대국을 시작하면 최근 진행 상황이 여기에 표시됩니다."
 		match_setup_panel.text = ""
 		last_move_panel.text = ""
 		for button in action_buttons:
@@ -1929,6 +2105,14 @@ func render_position(state: Dictionary) -> void:
 	var cho_points := float(points.get("cho", 0.0))
 	var han_points := float(points.get("han", 0.0))
 	score_panel.text = "기물 점수 · 초 %.1f / 한 %.1f · 차이 %+.1f" % [cho_points, han_points, cho_points - han_points]
+	var mode_name := "로컬 2인" if state.get("mode", "") == "local" else "AI 대전"
+	var turn_name := "초" if state.turn == "cho" else "한"
+	home_stats.text = "%d수 진행  ·  초 %.1f  ·  한 %.1f\n%s · %s" % [state.moves.size(), cho_points, han_points, mode_name, "대국 종료" if state.outcome.over else turn_name + " 차례"]
+	if state.outcome.over:
+		var home_result := "무승부" if state.outcome.get("winner") == null else ("초 승리" if state.outcome.winner == "cho" else "한 승리")
+		home_recent.text = "%s  ·  %s\n%d수 · %s" % [mode_name, home_result, state.moves.size(), str(state.outcome.get("reason", "종료"))]
+	else:
+		home_recent.text = "%s  ·  %s 차례\n%d수까지 진행 · 대국 화면에서 이어 두기" % [mode_name, turn_name, state.moves.size()]
 	if not variation.is_empty():
 		if variation_evaluation.is_empty():
 			score_panel.text += " · 기기 형세 계산 중…" if device_engine.available() else " · 기기 형세 사용 불가"
