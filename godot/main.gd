@@ -24,7 +24,7 @@ var last_move_panel := Label.new()
 var review_summary := Label.new()
 var review_method_notice := Label.new()
 var key_move_status := Label.new()
-var grid := GridContainer.new()
+var grid := preload("res://janggi_board.gd").new()
 var side := OptionButton.new()
 var ai_difficulty := OptionButton.new()
 var cho_setup := OptionButton.new()
@@ -235,7 +235,7 @@ func create_app_theme() -> Theme:
 	return app_theme
 
 func board_box(background: Color) -> StyleBoxFlat:
-	var box := cream_box(background, Color("e3cdb8"), 8, 1)
+	var box := cream_box(background, Color.TRANSPARENT, 8, 0)
 	box.content_margin_left = 2
 	box.content_margin_right = 2
 	box.content_margin_top = 2
@@ -378,8 +378,15 @@ func _ready() -> void:
 	clock_panel.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(clock_panel)
 	grid.columns = 9
-	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	column.add_child(grid)
+	var credit := RichTextLabel.new()
+	credit.bbcode_enabled = true
+	credit.fit_content = true
+	credit.add_theme_color_override("default_color", Color("786957"))
+	credit.text = "[font_size=12]장기말 · [url=https://github.com/Kadagaden/chess-pieces]Kadagaden / chess-pieces[/url] · [url=https://creativecommons.org/licenses/by/4.0/]CC BY 4.0[/url][/font_size]"
+	credit.meta_clicked.connect(func(url): OS.shell_open(str(url)))
+	column.add_child(credit)
 	column.add_child(game_actions)
 	add_action(game_actions, "한수쉼", pass_turn)
 	add_action(game_actions, "무르기", func(): act("undo"))
@@ -1833,14 +1840,29 @@ func render_position(state: Dictionary) -> void:
 			var square := String.chr(97 + (8 - file if flipped else file)) + str(row + 1 if flipped else 10 - row)
 			var piece: String = pieces.get(square, "")
 			var button := Button.new()
-			button.text = ("병" if piece == "p" else str(labels.get(piece.to_lower(), "·")))
+			button.text = ""
 			button.tooltip_text = square
-			button.custom_minimum_size = Vector2(40, 42)
+			button.custom_minimum_size = Vector2(40, maxf(40.0, grid.size.x / 9.0))
 			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			button.size_flags_vertical = Control.SIZE_EXPAND_FILL
-			var square_color := Color("fff9ed") if (row + file) % 2 == 0 else Color("f7e6cf")
-			button.add_theme_stylebox_override("normal", board_box(square_color))
-			button.add_theme_stylebox_override("disabled", board_box(square_color.darkened(0.03)))
+			for style in ["normal", "disabled", "hover", "pressed"]:
+				button.add_theme_stylebox_override(style, board_box(Color.TRANSPARENT))
+			button.add_theme_stylebox_override("hover", board_box(Color(1, 1, 1, 0.3)))
+			if piece != "":
+				var names := {"k": "king", "a": "advisor", "r": "chariot", "n": "horse", "b": "elephant", "c": "cannon", "p": "pawn"}
+				var color := "blue" if piece == piece.to_upper() else "red"
+				var art := TextureRect.new()
+				art.name = "PieceArt"
+				art.texture = load("res://assets/janggi/%s_%s.svg" % [color, names[piece.to_lower()]])
+				art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+				art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+				art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				button.add_child(art)
+				art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+				art.offset_left = 2
+				art.offset_top = 2
+				art.offset_right = -2
+				art.offset_bottom = -2
 			button.add_theme_color_override("font_color", Color("5687a0") if piece != "" and piece == piece.to_upper() else Color("c8796d") if piece != "" else Color("ccb8a6"))
 			button.add_theme_color_override("font_disabled_color", Color("6f9aaf") if piece != "" and piece == piece.to_upper() else Color("ce8b81") if piece != "" else Color("cfbdad"))
 			if live_last_pair.size() == 2 and square == live_last_pair[0]:
@@ -1869,6 +1891,11 @@ func render_position(state: Dictionary) -> void:
 				button.modulate = Color("ffd27a")
 			elif retry_mode and retry_hint.size() == 2 and retry_hint_stage >= 2 and square == retry_hint[1]:
 				button.modulate = Color("94ddb0")
+			if button.modulate != Color.WHITE:
+				button.self_modulate = button.modulate
+				button.modulate = Color.WHITE
+				for style in ["normal", "disabled", "hover", "pressed"]:
+					button.add_theme_stylebox_override(style, board_box(Color(1, 1, 1, 0.72)))
 			button.disabled = (not review.is_empty() and variation.is_empty()) or (pending and current_path != "game") or ai_turn or state.outcome.over
 			button.pressed.connect(choose.bind(square, piece))
 			grid.add_child(button)

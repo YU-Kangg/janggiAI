@@ -1,5 +1,13 @@
 # 외부 소프트웨어 기록
 
+## Kadagaden 장기말
+
+- 저작자: Kadagaden. [chess-pieces 원본](https://github.com/Kadagaden/chess-pieces).
+- 원본 커밋: `b035b0cc6a68e9fb99c872c8fe073c3ae3eba8a0`.
+- `janggi_kakao_janggi_style_white/`의 파랑·빨강 SVG 14개를 `godot/assets/janggi/`에 수정 없이 포함했습니다. 화면 크기에 맞춰 비율을 유지하며 표시합니다.
+- 라이선스: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). 원문: [LICENSE.txt](godot/assets/janggi/LICENSE.txt). 앱 장기판 아래에도 저작자·원본·라이선스 링크를 표시합니다.
+- 장기판 선과 배경은 프로젝트에서 직접 그립니다.
+
 ## Android 네이티브 개발 기반
 
 - Fairy-Stockfish 및 godot-cpp의 정확한 소스 커밋과 빌드 방법: [native/README.md](native/README.md).

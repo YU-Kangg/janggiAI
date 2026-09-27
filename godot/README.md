@@ -1,6 +1,6 @@
 # Godot 고양이 장기 시제품
 
-Godot 4.7.2 / GDScript / Compatibility 렌더러. 현재는 고양이 아트 대신 한글 기물 버튼을 사용합니다.
+Godot 4.7.2 / GDScript / Compatibility 렌더러. 밝은 9×10 교차점 장기판과 궁성 대각선, Kadagaden의 흰색 팔각형 SVG 장기말을 사용합니다. 초는 파랑, 한은 빨강이며 판 아래에 에셋 출처와 CC BY 4.0 링크를 표시합니다.
 기본 janggi 규칙·AI·저장은 기존 Node 서버에서 처리합니다. 독립 오프라인 앱은 아직 아닙니다.
 
 ## PC에서 실행

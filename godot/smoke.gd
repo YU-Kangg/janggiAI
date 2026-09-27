@@ -39,6 +39,14 @@ func run() -> void:
 	app.show_home_screen()
 	check(app.review_tabs.visible and not app.game_actions.visible and app.play_button.visible, "home screen owns review controls")
 	check(app.squares.size() == 90, "90 board squares")
+	var piece_count := 0
+	for square in app.squares.values():
+		if square.has_node("PieceArt"):
+			piece_count += 1
+			check(square.get_node("PieceArt").texture != null, "SVG imported")
+	check(piece_count == 32, "32 starting pieces")
+	check(app.squares["a1"].get_node("PieceArt").texture.resource_path.ends_with("blue_chariot.svg"), "Cho mapping")
+	check(app.squares["e9"].get_node("PieceArt").texture.resource_path.ends_with("red_king.svg"), "Han mapping")
 	check(app.review_tabs.get_tab_count() == 3, "review controls grouped into three workflow tabs")
 	check(app.review_tabs.get_tab_title(0) == "게임 리뷰" and app.review_tabs.get_tab_title(1) == "자유 분석" and app.review_tabs.get_tab_title(2) == "보관", "review workflow tab labels")
 	check(app.full_review_start.get_parent() == app.review_start_controls and app.retry_button.get_parent() == app.review_coach_controls, "review start and learning actions grouped")
@@ -267,7 +275,7 @@ func run() -> void:
 	app.squares["a4"].pressed.emit()
 	app.squares["b4"].pressed.emit()
 	await wait_idle()
-	check(app.last_move_panel.text.contains("직전 착수") and app.squares["a4"].modulate == Color("ffd36f") and app.squares["b4"].modulate == Color("ff9f80"), "last move source and destination emphasized")
+	check(app.last_move_panel.text.contains("직전 착수") and app.squares["a4"].self_modulate == Color("ffd36f") and app.squares["b4"].self_modulate == Color("ff9f80"), "last move source and destination emphasized")
 	check(app.state.moves == ["a4b4"] and app.state.turn == "han", "local alternating move")
 	app.act("resign", {"side": "han"})
 	await wait_idle()
