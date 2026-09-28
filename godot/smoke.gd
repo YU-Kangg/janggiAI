@@ -49,7 +49,10 @@ func run() -> void:
 			app.coming_soon.hide()
 	app.show_home_review(0)
 	await wait_idle()
-	check(not app.home_dashboard.visible and not app.review_tabs.visible and app.grid.visible and app.compact_review_header.visible, "record opens compact review board")
+	check(app.record_panel.visible and not app.grid.visible, "record opens summary before review")
+	check(app.full_review.is_empty() and app.record_counts.best.cho.text == "—", "opening record does not analyze or invent counts")
+	app.enter_record_review()
+	await wait_idle()
 	check(app.view_ply() == 0 and app.compact_previous.disabled, "record opens starting position with previous disabled")
 	app.show_home_screen()
 	check(app.squares.size() == 90, "90 board squares")
@@ -90,7 +93,8 @@ func run() -> void:
 	app.review_export_path = "user://janggi-review-smoke.json"
 	if FileAccess.file_exists(app.review_export_path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(app.review_export_path))
-	app.start_full_review()
+	app.open_game_record()
+	app.record_start.pressed.emit()
 	await wait_idle()
 	check(app.full_review.status == "running" and app.full_review.total == 2, "full review starts in background")
 	for attempt in range(100):
@@ -102,7 +106,15 @@ func run() -> void:
 	check(app.full_review.status == "complete" and app.full_review.results.size() == 2, "full review progress and completion")
 	await process_frame
 	await wait_idle()
+	check(app.home_section == "review" and app.grid.visible, "review start automatically enters board after analysis")
 	app.open_game_record()
+	await wait_idle()
+	check(app.record_panel.visible and app.record_counts.best.cho.text != "—", "completed review exposes real side statistics")
+	var counted := 0
+	for key in app.record_counts:
+		counted += int(app.record_counts[key].cho.text) + int(app.record_counts[key].han.text)
+	check(counted == 2, "classification counts cover each analyzed move exactly once")
+	app.record_start.pressed.emit()
 	await wait_idle()
 	app.compact_next.pressed.emit()
 	await wait_idle()
@@ -308,6 +320,9 @@ func run() -> void:
 	check(app.state.mode == "local" and app.state.setup.cho == "bnnb" and app.state.setup.han == "nbnb" and app.state.players.cho == "춘향", "local match setup")
 	check(app.state.clock.enabled and app.state.clock.initialMs == 600000 and app.state.clock.incrementMs == 5000, "local match clock setup")
 	check(app.local_match_active() and app.history.disabled and app.device_recommend.disabled and app.full_review_start.disabled, "local match analysis lock")
+	app.open_game_record()
+	check(app.record_start.disabled, "ongoing local game cannot start analysis")
+	app.show_game_screen()
 	check(app.resign_button.visible and app.draw_button.visible and not app.action_buttons[3].visible and not app.device_recommend.visible, "local match actions only")
 	app.squares["a4"].pressed.emit()
 	app.squares["b4"].pressed.emit()
@@ -319,6 +334,28 @@ func run() -> void:
 	check(app.state.outcome.over and app.state.outcome.winner == "cho" and app.state.outcome.reason == "기권", "local resignation")
 	check(not app.rematch_button.disabled and app.status.text.contains("춘향(초) 승리"), "local rematch and winner status")
 	check(app.rematch_button.visible and not app.resign_button.visible, "local end actions")
+	app.open_game_record()
+	app.offline_local = true
+	app.start_record_review()
+	app.record_enter_when_ready = false
+	await wait_idle()
+	check(app.full_review.has("recordJobId"), "device record uses isolated server analysis")
+	for attempt in range(100):
+		if app.full_review.get("status", "") != "running":
+			break
+		await create_timer(0.1).timeout
+		app.request_state()
+		await wait_idle()
+	check(app.full_review.status == "complete" and app.full_review.results.size() == 1, "device record analysis completes with genuine engine results")
+	app.offline_local = false
+	var saved_endpoint: String = app.endpoint.text
+	app.endpoint.text = "http://127.0.0.1:1"
+	app.full_review = {}
+	app.start_record_review()
+	await wait_idle()
+	check(app.record_status.text.contains("연결") and not app.record_start.disabled, "summary shows connection failure and allows retry")
+	app.endpoint.text = saved_endpoint
+	app.show_home_screen()
 	app.pending_new_mode = "local"
 	app.confirm_new_game()
 	await wait_idle()

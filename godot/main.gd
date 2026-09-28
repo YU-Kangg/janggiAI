@@ -157,6 +157,17 @@ var compact_moves := OptionButton.new()
 var compact_analyze := Button.new()
 var record_open_requested := false
 var review_grade_requested := false
+var record_panel := VBoxContainer.new()
+var record_result := Label.new()
+var record_details := Label.new()
+var record_counts: Dictionary = {}
+var record_status := Label.new()
+var record_progress := ProgressBar.new()
+var record_start := Button.new()
+var record_browse := Button.new()
+var record_error := ""
+var record_identity := ""
+var record_enter_when_ready := false
 var light_theme: Theme
 
 func add_section_title(parent: Control, caption: String) -> void:
@@ -193,11 +204,84 @@ func open_game_record() -> void:
 	if state.is_empty():
 		return
 	screen_mode = "home"
+	home_section = "record"
+	record_error = ""
+	record_enter_when_ready = false
+	review_grade_requested = false
+	record_open_requested = false
+	sync_screen_visibility()
+	page_scroll.scroll_vertical = 0
+	update_record_summary()
+
+func enter_record_review() -> void:
+	if pending:
+		return
 	home_section = "review"
 	record_open_requested = true
 	sync_screen_visibility()
 	page_scroll.scroll_vertical = 0
 	open_record_when_idle()
+
+func start_record_review() -> void:
+	if pending or state.is_empty() or state.moves.is_empty() or local_match_active():
+		return
+	if full_review.get("status", "") == "complete":
+		enter_record_review()
+		return
+	record_error = ""
+	record_enter_when_ready = true
+	if full_review.get("status", "") == "running":
+		return
+	open_review_when_ready = false
+	if offline_local:
+		send("record-review-start", {"revision": int(state.revision), "setup": state.setup, "initialFen": state.initialFen, "moves": state.moves})
+	else:
+		send("review-start", {"revision": int(state.revision)})
+
+func update_record_summary() -> void:
+	if state.is_empty():
+		return
+	var identity := str(state.get("initialFen", "")) + JSON.stringify(state.moves)
+	if not record_identity.is_empty() and record_identity != identity:
+		full_review = {}
+		record_enter_when_ready = false
+	record_identity = identity
+	var outcome: Dictionary = state.get("outcome", {})
+	record_result.text = "진행 중인 경기"
+	if outcome.get("over", false):
+		record_result.text = "무승부" if outcome.get("winner") == null else ("초 승리" if outcome.winner == "cho" else "한 승리")
+	record_details.text = "%s · %d수\n초 %s  vs  한 %s" % [str(outcome.get("reason", "기보 기록")) if outcome.get("over", false) else "현재까지의 기보", state.moves.size(), str(state.get("players", {}).get("cho", "초")), str(state.get("players", {}).get("han", "한"))]
+	var phase := str(full_review.get("status", ""))
+	var results: Array = full_review.get("results", [])
+	for key in record_counts:
+		var counts := {"cho": 0, "han": 0}
+		for item in results:
+			if item.get("classification", {}).get("key") == key and counts.has(item.get("side", "")):
+				counts[item.side] += 1
+		for team in ["cho", "han"]:
+			record_counts[key][team].text = str(counts[team]) if phase in ["running", "complete"] else "—"
+	record_progress.visible = phase == "running"
+	record_progress.max_value = maxi(1, int(full_review.get("total", state.moves.size())))
+	record_progress.value = int(full_review.get("completed", 0))
+	record_start.text = "리뷰 시작"
+	record_start.disabled = pending or local_match_active() or state.moves.is_empty() or phase == "running"
+	record_browse.disabled = pending
+	if not record_error.is_empty():
+		record_status.text = record_error
+		record_start.text = "분석 다시 시도"
+	elif local_match_active():
+		record_status.text = "대국이 끝나면 수 평가를 분석할 수 있습니다."
+	elif state.moves.is_empty():
+		record_status.text = "아직 분석할 수가 없습니다."
+	elif phase == "running":
+		record_status.text = "Stockfish 분석 중 · %d / %d수\n평가가 끝나면 리뷰 화면으로 이동합니다." % [int(full_review.completed), int(full_review.total)]
+		record_start.text = "분석 중…"
+	elif phase == "complete":
+		record_status.text = "분석 완료 · %d수\nFairy-Stockfish 장기 평가 · 탁월수: 평가 손실 15cp 이하인 비최선수" % results.size()
+	elif phase in ["failed", "cancelled", "error"]:
+		record_status.text = "분석을 완료하지 못했습니다. 다시 시도해 주세요."
+	else:
+		record_status.text = "리뷰 시작을 누르면 Stockfish가 각 수를 분석합니다.\n분석 전 통계는 —로 표시됩니다." + ("\n기기 저장 경기의 분석에는 서버 연결이 필요합니다." if offline_local else "")
 
 func open_record_when_idle() -> void:
 	if pending or not record_open_requested:
@@ -205,7 +289,7 @@ func open_record_when_idle() -> void:
 	record_open_requested = false
 	clear_variation()
 	show_review(0)
-	review_grade_requested = not offline_local and not local_match_active() and not state.moves.is_empty() and full_review.is_empty()
+	review_grade_requested = false
 
 func request_compact_analysis() -> void:
 	if pending or offline_local or local_match_active() or state.moves.is_empty():
@@ -262,14 +346,16 @@ func show_game_screen() -> void:
 func sync_screen_visibility() -> void:
 	var playing := screen_mode == "play"
 	var reviewing := not playing and home_section == "review"
+	var recording := not playing and home_section == "record"
+	record_panel.visible = recording
 	app_background.color = Color("fff7e8")
-	app_title.text = "게임 리뷰" if reviewing else ("고양이 장기 · 대국" if playing else "장기")
+	app_title.text = "경기 기록" if recording else ("게임 리뷰" if reviewing else ("고양이 장기 · 대국" if playing else "장기"))
 	app_title.add_theme_color_override("font_color", Color("845847"))
 	home_dashboard.visible = not playing and home_section == "dashboard"
 	account_badge.visible = not playing and home_section == "dashboard" and current_role == "admin"
-	home_button.visible = playing or reviewing
+	home_button.visible = playing or reviewing or recording
 	play_button.visible = false
-	bottom_navigation.visible = not playing and not reviewing
+	bottom_navigation.visible = not playing and not reviewing and not recording
 	server_toggle.visible = not playing and home_section == "dashboard" and current_role == "admin"
 	server_controls.visible = not playing and home_section == "dashboard" and current_role == "admin" and server_controls.visible
 	status.visible = playing or current_role == "admin"
@@ -557,6 +643,51 @@ func _ready() -> void:
 	update_setup_summaries()
 	clock_panel.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(clock_panel)
+	column.add_child(record_panel)
+	record_panel.add_theme_constant_override("separation", 16)
+	record_result.add_theme_font_size_override("font_size", 30)
+	record_result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	record_panel.add_child(record_result)
+	record_details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	record_details.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	record_panel.add_child(record_details)
+	var stats_card := PanelContainer.new()
+	stats_card.add_theme_stylebox_override("panel", cream_box(Color("fffaf2")))
+	record_panel.add_child(stats_card)
+	var stats := GridContainer.new()
+	stats.columns = 3
+	stats.add_theme_constant_override("v_separation", 16)
+	stats_card.add_child(stats)
+	for caption in ["수 평가", "초", "한"]:
+		var heading := Label.new()
+		heading.text = caption
+		heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		stats.add_child(heading)
+	var grades := {"excellent": "탁월수", "best": "최선수", "good": "좋은 수", "inaccuracy": "부정확한 수", "mistake": "실수", "blunder": "큰 실수", "unclassified": "평가 제외"}
+	for key in grades:
+		var caption := Label.new()
+		caption.text = grades[key]
+		stats.add_child(caption)
+		record_counts[key] = {}
+		for team in ["cho", "han"]:
+			var count := Label.new()
+			count.text = "—"
+			count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			count.add_theme_font_size_override("font_size", 24)
+			count.add_theme_color_override("font_color", Color("5782b5") if team == "cho" else Color("b46955"))
+			stats.add_child(count)
+			record_counts[key][team] = count
+	record_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	record_panel.add_child(record_status)
+	record_panel.add_child(record_progress)
+	style_dashboard_button(record_start, true)
+	record_start.pressed.connect(start_record_review)
+	record_panel.add_child(record_start)
+	record_browse.text = "기보만 보기"
+	record_browse.custom_minimum_size.y = 48
+	record_browse.pressed.connect(enter_record_review)
+	record_panel.add_child(record_browse)
 	compact_review_header.add_theme_constant_override("separation", 8)
 	column.add_child(compact_review_header)
 	compact_grade.add_theme_font_size_override("font_size", 26)
@@ -1123,6 +1254,9 @@ func add_action(parent: Node, caption: String, callback: Callable) -> void:
 	action_buttons.append(button)
 
 func request_state() -> void:
+	if not pending and full_review.get("status", "") == "running" and full_review.has("recordJobId"):
+		send("record-review-status", {"recordJobId": full_review.recordJobId})
+		return
 	if record_open_requested:
 		open_record_when_idle()
 		return
@@ -1158,6 +1292,9 @@ func send(path: String, data: Dictionary = {}) -> void:
 		pending = false
 		endpoint.editable = true
 		message.text = "연결 요청 실패: %s" % error
+		if path.begins_with("record-review") or (home_section == "record" and path == "review-start"):
+			record_error = message.text
+			full_review = {}
 		render_board()
 
 func on_response(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
@@ -1166,11 +1303,17 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 	var parser := JSON.new()
 	if result != HTTPRequest.RESULT_SUCCESS or parser.parse(body.get_string_from_utf8()) != OK or not parser.data is Dictionary:
 		message.text = "서버에 연결하지 못했습니다. 서버 실행과 주소를 확인하세요."
+		if current_path.begins_with("record-review") or (home_section == "record" and current_path in ["review-start", "review-status"]):
+			record_error = "분석 서버에 연결하지 못했습니다. 연결 후 다시 시도해 주세요."
+			full_review = {}
 		render_board()
 		return
 	var payload: Dictionary = parser.data
 	if code != 200:
 		message.text = str(payload.get("error", "요청 실패"))
+		if current_path.begins_with("record-review") or (home_section == "record" and current_path in ["review-start", "review-status"]):
+			record_error = message.text
+			full_review = {}
 		selected = ""
 		render_board()
 		return
@@ -1199,7 +1342,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 			schedule_variation_evaluation()
 		render_board()
 		return
-	if current_path in ["review-start", "review-status", "review-latest", "review-cancel"]:
+	if current_path in ["review-start", "review-status", "review-latest", "review-cancel", "record-review-start", "record-review-status"]:
 		if current_path == "review-latest" and payload.get("status", "") == "none":
 			import_full_review(false)
 			render_board()
@@ -1215,6 +1358,9 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 				evaluation_graph.set_results(payload.results)
 				review_summary.text = format_review_summary(payload.get("summary", {}))
 				export_full_review(false)
+				if record_enter_when_ready and home_section == "record":
+					record_enter_when_ready = false
+					call_deferred("enter_record_review")
 				if open_review_when_ready:
 					open_review_when_ready = false
 					call_deferred("open_guided_review")
@@ -1255,7 +1401,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 		selected = ""
 	if current_path != "game" or changed:
 		message.text = ""
-	if changed or current_path != "game":
+	if changed or current_path != "game" or home_section == "record":
 		render_board()
 	if pending_ai_start_after_connect:
 		pending_ai_start_after_connect = false
@@ -2008,6 +2154,7 @@ func render_board() -> void:
 	update_compact_review()
 
 func update_compact_review() -> void:
+	update_record_summary()
 	recent_game_button.disabled = state.is_empty()
 	recent_game_button.text = home_recent_text + ("\n기보 보기  ›" if not state.is_empty() else "")
 	primary_play.text = "이어서 대국" if not state.is_empty() and not state.outcome.over else "새 대국 시작"
@@ -2023,7 +2170,7 @@ func update_compact_review() -> void:
 	compact_moves.select(clampi(ply, 0, total))
 	compact_move.text = "시작 배치 · 0 / %d수" % total if ply == 0 else "%s · %d / %d수" % [readable_move(str(state.moves[ply - 1])), ply, total]
 	var entry := cached_review_result(ply)
-	var labels := {"best": "최선", "excellent": "정확", "good": "좋은 수", "inaccuracy": "부정확", "mistake": "실수", "blunder": "큰 실수", "unclassified": "평가 제외"}
+	var labels := {"best": "최선", "excellent": "탁월", "good": "좋은 수", "inaccuracy": "부정확", "mistake": "실수", "blunder": "큰 실수", "unclassified": "평가 제외"}
 	compact_grade.text = "시작 배치" if ply == 0 else str(labels.get(entry.get("classification", {}).get("key", ""), "미분석"))
 	compact_grade.add_theme_color_override("font_color", Color("b46955") if entry.get("classification", {}).get("key", "") in ["inaccuracy", "mistake", "blunder"] else Color("6c8060"))
 	var evaluation := compact_evaluation(entry, "after")
