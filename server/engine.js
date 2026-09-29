@@ -25,7 +25,7 @@ export function parseAnalysis(output, startFen, moves) {
 
 // Small local prototype: each request owns its engine process and search state.
 // Replace with a bounded worker pool when adding server reviews.
-export function runEngine(moves, analyze = false, startFen = initialFen(), { signal, movetimeMs = 300 } = {}) {
+export function runEngine(moves, analyze = false, startFen = initialFen(), { signal, movetimeMs = 300, skillLevel = 20 } = {}) {
   if (signal?.aborted) return Promise.reject(new DOMException('분석을 취소했습니다.', 'AbortError'));
   if (!Array.isArray(moves) || moves.some(move => !movePattern.test(move))) {
     return Promise.reject(new Error('잘못된 기보 형식입니다.'));
@@ -62,6 +62,7 @@ export function runEngine(moves, analyze = false, startFen = initialFen(), { sig
       'setoption name Hash value 32',
       'setoption name Use NNUE value true',
       'setoption name MultiPV value 1',
+      `setoption name Skill Level value ${Math.max(0, Math.min(20, Math.round(skillLevel)))}`,
       'ucinewgame',
       `position fen ${startFen}${moves.length ? ` moves ${moves.join(' ')}` : ''}`,
       ...(analyze ? [`go movetime ${Math.max(50, Math.min(3000, Math.round(movetimeMs)))}`] : ['d', 'go perft 1', 'isready']),
@@ -86,7 +87,12 @@ export async function recommend(moves, startFen = initialFen(), options = {}) {
   }
   const move = output.match(/^bestmove (\S+)/m)?.[1];
   if (!movePattern.test(move || '')) throw new Error('추천할 수를 찾지 못했습니다.');
-  const analysis = parseAnalysis(output, startFen, moves);
-  if (analysis.pv[0] !== move) throw new Error('추천 수와 평가 수순이 일치하지 않습니다.');
+  let analysis = parseAnalysis(output, startFen, moves);
+  if (analysis.pv[0] !== move) {
+    if ((options.skillLevel ?? 20) >= 20) throw new Error('추천 수와 평가 수순이 일치하지 않습니다.');
+    // Skill Level intentionally chooses a weaker move than the principal variation.
+    // Do not expose the stronger line as though it started with the played AI move.
+    analysis = { ...analysis, pv: [move] };
+  }
   return { move, budgetMs: Math.max(50, Math.min(3000, Math.round(options.movetimeMs ?? 300))), source: 'local-server', analysis };
 }

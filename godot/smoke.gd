@@ -72,6 +72,7 @@ func run() -> void:
 	check(app.game_mode_tabs.get_tab_count() == 2 and app.game_mode_tabs.get_tab_title(0) == "AI 대전" and app.game_mode_tabs.get_tab_title(1) == "로컬 2인 대전", "AI and local match setup separated")
 	check(app.new_game_dialog.title == "새 대국 확인" and app.new_game_dialog.get_ok_button().text == "시작" and app.new_game_dialog.get_cancel_button().text == "취소", "new game confirmation localized")
 	check(app.side.get_parent() == app.ai_game_panel and app.ai_difficulty.get_parent() == app.ai_game_panel and app.cho_name.get_parent() == app.local_game_panel and app.time_control.get_parent() == app.local_game_panel, "mode-specific controls grouped")
+	check(app.ai_difficulty.item_count == 15 and app.ai_difficulty.get_item_text(0) == "18급" and app.ai_difficulty.get_item_text(5) == "3급" and app.ai_difficulty.get_item_text(6) == "1단" and app.ai_difficulty.get_item_text(14) == "9단", "AI rank selector uses three-kyu and one-dan steps")
 	check(app.cho_setup.get_parent().get_parent() == app.setup_dialog and app.han_setup.get_parent().get_parent() == app.setup_dialog, "piece setup controls moved to modal")
 	check(not app.device_engine.available() and app.device_recommend.disabled, "desktop fallback without Android engine")
 	app.act("reset", {"mode": "ai", "humanSide": "cho"})

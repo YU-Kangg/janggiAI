@@ -28,6 +28,8 @@ var key_move_status := Label.new()
 var grid := preload("res://janggi_board.gd").new()
 var side := OptionButton.new()
 var ai_difficulty := OptionButton.new()
+const AI_LEVEL_IDS := ["g18", "g15", "g12", "g9", "g6", "g3", "d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8", "d9"]
+const AI_LEVEL_LABELS := ["18급", "15급", "12급", "9급", "6급", "3급", "1단", "2단", "3단", "4단", "5단", "6단", "7단", "8단", "9단"]
 var cho_setup := OptionButton.new()
 var han_setup := OptionButton.new()
 var time_control := OptionButton.new()
@@ -597,10 +599,9 @@ func _ready() -> void:
 	side.add_item("초로 AI 대국")
 	side.add_item("한으로 AI 대국")
 	ai_game_panel.add_child(side)
-	ai_difficulty.add_item("빠르게 · 약 0.1초")
-	ai_difficulty.add_item("보통 · 약 0.3초")
-	ai_difficulty.add_item("강하게 · 약 1초")
-	ai_difficulty.select(1)
+	for level_label in AI_LEVEL_LABELS:
+		ai_difficulty.add_item(level_label)
+	ai_difficulty.select(AI_LEVEL_IDS.find("g9"))
 	ai_game_panel.add_child(ai_difficulty)
 	ai_setup_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	ai_game_panel.add_child(ai_setup_summary)
@@ -996,7 +997,9 @@ func sync_new_game_controls() -> void:
 	game_mode_tabs.current_tab = 1 if state.get("mode", "ai") == "local" else 0
 	game_mode_tabs.visible = false
 	game_setup_toggle.text = "새 대국 설정"
-	ai_difficulty.select(maxi(["quick", "normal", "strong"].find(str(state.get("aiLevel", "normal"))), 0))
+	var saved_level := str(state.get("aiLevel", "g9"))
+	saved_level = {"quick": "g15", "normal": "g9", "strong": "d4"}.get(saved_level, saved_level)
+	ai_difficulty.select(maxi(AI_LEVEL_IDS.find(saved_level), 0))
 	selected_cho_setup = str(state.get("setup", {}).get("cho", "nbbn"))
 	selected_han_setup = str(state.get("setup", {}).get("han", "nbbn"))
 	cho_setup.select(arrangement_index(selected_cho_setup))
@@ -1026,7 +1029,7 @@ func selected_time_control() -> Variant:
 			return null
 
 func selected_ai_level() -> String:
-	return ["quick", "normal", "strong"][clampi(ai_difficulty.selected, 0, 2)]
+	return AI_LEVEL_IDS[clampi(ai_difficulty.selected, 0, AI_LEVEL_IDS.size() - 1)]
 
 func local_initial_fen(setup: Dictionary) -> String:
 	var han: String = str(setup.get("han", "nbbn"))
@@ -1063,7 +1066,7 @@ func refresh_offline_state(increment_revision := false) -> bool:
 		"bikjang": position.get("bikjang", false), "legalMoves": Array(position.legalMoves),
 		"points": material_points(str(position.fen)), "outcome": outcome,
 		"initialFen": initial_fen, "setup": setup, "moves": offline_moves.duplicate(),
-		"revision": revision, "variant": "janggi", "mode": "local", "humanSide": "cho", "aiLevel": "normal",
+		"revision": revision, "variant": "janggi", "mode": "local", "humanSide": "cho", "aiLevel": "g9",
 		"players": {"cho": cho_name.text.strip_edges(), "han": han_name.text.strip_edges()},
 		"clock": {
 			"enabled": offline_time_control != null, "choMs": int(offline_clock.cho), "hanMs": int(offline_clock.han),

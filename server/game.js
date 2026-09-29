@@ -3,6 +3,26 @@ import { rulePosition, initialFen, defaultSetup, materialPoints } from './rules.
 
 const fail = (message, status = 409) => Object.assign(new Error(message), { status });
 
+export const AI_LEVELS = Object.freeze({
+  g18: { label: '18급', movetimeMs: 80, skillLevel: 0 },
+  g15: { label: '15급', movetimeMs: 100, skillLevel: 2 },
+  g12: { label: '12급', movetimeMs: 130, skillLevel: 4 },
+  g9: { label: '9급', movetimeMs: 180, skillLevel: 6 },
+  g6: { label: '6급', movetimeMs: 250, skillLevel: 8 },
+  g3: { label: '3급', movetimeMs: 350, skillLevel: 10 },
+  d1: { label: '1단', movetimeMs: 500, skillLevel: 12 },
+  d2: { label: '2단', movetimeMs: 650, skillLevel: 13 },
+  d3: { label: '3단', movetimeMs: 800, skillLevel: 14 },
+  d4: { label: '4단', movetimeMs: 1000, skillLevel: 15 },
+  d5: { label: '5단', movetimeMs: 1300, skillLevel: 16 },
+  d6: { label: '6단', movetimeMs: 1700, skillLevel: 17 },
+  d7: { label: '7단', movetimeMs: 2100, skillLevel: 18 },
+  d8: { label: '8단', movetimeMs: 2600, skillLevel: 19 },
+  d9: { label: '9단', movetimeMs: 3000, skillLevel: 20 },
+});
+const legacyAiLevels = { quick: 'g15', normal: 'g9', strong: 'd4' };
+const normalizeAiLevel = value => legacyAiLevels[value] ?? value;
+
 export function classifyMove(match, lossCp) {
   if (match) return { key: 'best', label: '최선', experimental: true, basis: 'exact-match' };
   if (!Number.isFinite(lossCp)) return { key: 'unclassified', label: '분류 제외', experimental: true, basis: 'unavailable' };
@@ -152,7 +172,7 @@ export class Game {
   setup = { ...defaultSetup };
   mode = 'practice';
   humanSide = 'cho';
-  aiLevel = 'normal';
+  aiLevel = 'g9';
   aiStatus = 'idle';
   aiError = null;
   aiJob = null;
@@ -170,7 +190,7 @@ export class Game {
     this.now = now;
     const saved = storage?.load();
     if (saved) {
-      if (![1, 2, 3].includes(saved.version) || saved.variant !== 'janggi' || !Array.isArray(saved.moves)
+      if (![1, 2, 3, 4].includes(saved.version) || saved.variant !== 'janggi' || !Array.isArray(saved.moves)
         || !['practice', 'local', 'ai'].includes(saved.mode) || !['cho', 'han'].includes(saved.humanSide)
         || !Number.isSafeInteger(saved.revision) || saved.revision < 0) throw new Error('저장된 기보 형식이 올바르지 않습니다.');
       this.state = rulePosition(saved.moves, initialFen(saved.setup));
@@ -178,8 +198,8 @@ export class Game {
       this.setup = { ...saved.setup };
       this.mode = saved.mode;
       this.humanSide = saved.humanSide;
-      this.aiLevel = saved.version >= 3 ? saved.aiLevel ?? 'normal' : 'normal';
-      if (!['quick', 'normal', 'strong'].includes(this.aiLevel)) throw new Error('저장된 AI 난이도가 올바르지 않습니다.');
+      this.aiLevel = normalizeAiLevel(saved.version >= 3 ? saved.aiLevel ?? 'normal' : 'normal');
+      if (!AI_LEVELS[this.aiLevel]) throw new Error('저장된 AI 난이도가 올바르지 않습니다.');
       this.revision = saved.revision + 1;
       this.adjudication = saved.version >= 2 ? saved.adjudication ?? null : null;
       this.timeControl = saved.version >= 2 ? saved.timeControl ?? null : null;
@@ -194,7 +214,7 @@ export class Game {
   persist(moves, setup = this.setup, mode = this.mode, humanSide = this.humanSide, adjudication = this.adjudication,
     timeControl = this.timeControl, clockRemaining = this.clockRemaining, players = this.players, aiLevel = this.aiLevel) {
     this.storage?.save({
-      version: 3, variant: 'janggi', moves, setup, mode, humanSide, adjudication, aiLevel,
+      version: 4, variant: 'janggi', moves, setup, mode, humanSide, adjudication, aiLevel,
       timeControl, clockRemaining: { ...clockRemaining }, revision: this.revision + 1,
       players: { ...players },
     });
@@ -274,8 +294,10 @@ export class Game {
     const moves = [...this.moves];
     const fen = initialFen(this.setup);
     // Search outside the HTTP queue so cancel/undo/reset remain responsive.
-    const movetimeMs = { quick: 100, normal: 300, strong: 1000 }[this.aiLevel];
-    job.done = Promise.resolve().then(() => this.recommendMove(moves, fen, { signal: job.controller.signal, movetimeMs }))
+    const level = AI_LEVELS[this.aiLevel];
+    job.done = Promise.resolve().then(() => this.recommendMove(moves, fen, {
+      signal: job.controller.signal, movetimeMs: level.movetimeMs, skillLevel: level.skillLevel,
+    }))
       .then(result => {
         if (this.aiJob !== job || this.revision !== job.revision) return;
         if (!this.state.legalMoves.includes(result.move)) throw new Error('합법 수가 아닌 AI 응수를 받았습니다.');
@@ -496,10 +518,10 @@ export class Game {
       nextSetup = data.setup ?? this.setup;
       nextMode = data.mode ?? this.mode;
       nextSide = data.humanSide ?? this.humanSide;
-      nextAiLevel = data.aiLevel ?? this.aiLevel;
+      nextAiLevel = normalizeAiLevel(data.aiLevel ?? this.aiLevel);
       nextPlayers = data.players ?? this.players;
       if (!['practice', 'local', 'ai'].includes(nextMode) || !['cho', 'han'].includes(nextSide)) throw fail('대국 방식 또는 진영이 올바르지 않습니다.', 400);
-      if (!['quick', 'normal', 'strong'].includes(nextAiLevel)) throw fail('AI 난이도가 올바르지 않습니다.', 400);
+      if (!AI_LEVELS[nextAiLevel]) throw fail('AI 난이도가 올바르지 않습니다.', 400);
       if (!nextPlayers || typeof nextPlayers.cho !== 'string' || typeof nextPlayers.han !== 'string'
         || !nextPlayers.cho.trim() || !nextPlayers.han.trim() || nextPlayers.cho.trim().length > 12 || nextPlayers.han.trim().length > 12) {
         throw fail('대국자 이름은 1~12자로 입력하세요.', 400);

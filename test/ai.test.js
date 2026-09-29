@@ -1,15 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { Game } from '../server/game.js';
+import { AI_LEVELS, Game } from '../server/game.js';
 import { createServer } from '../server/index.js';
 import { runEngine } from '../server/engine.js';
 
 const act = (game, action, data = {}) => game.act(action, { revision: game.revision, ...data });
+
+test('AI 등급은 3급 간격의 급수와 1단 간격의 단수로 강해짐', () => {
+  assert.deepEqual(Object.values(AI_LEVELS).map(level => level.label), [
+    '18급', '15급', '12급', '9급', '6급', '3급',
+    '1단', '2단', '3단', '4단', '5단', '6단', '7단', '8단', '9단',
+  ]);
+  const levels = Object.values(AI_LEVELS);
+  for (let index = 1; index < levels.length; index++) {
+    assert.ok(levels[index].skillLevel > levels[index - 1].skillLevel);
+    assert.ok(levels[index].movetimeMs > levels[index - 1].movetimeMs);
+  }
+});
 function controlledGame() {
   const calls = [];
   const game = new Game({ recommendMove: (moves, fen, options) => new Promise((resolve, reject) => {
-    calls.push({ moves, fen, signal: options?.signal, movetimeMs: options?.movetimeMs, resolve, reject });
+    calls.push({ moves, fen, signal: options?.signal, movetimeMs: options?.movetimeMs, skillLevel: options?.skillLevel, resolve, reject });
   }) });
   return { game, calls };
 }
@@ -74,13 +86,14 @@ test('취소는 현재 판 유지, 재개 전까지 정지, 늦은 이전 결과
   assert.deepEqual(game.moves, ['a4b4', 'i7h7']);
 });
 
-test('AI 난이도는 탐색 시간으로 전달되고 상태와 저장 기보에 유지됨', async () => {
+test('AI 급·단은 기력과 탐색 시간으로 전달되고 상태에 유지됨', async () => {
   const { game, calls } = controlledGame();
-  let state = await act(game, 'reset', { mode: 'ai', humanSide: 'cho', aiLevel: 'strong' });
-  assert.equal(state.aiLevel, 'strong');
+  let state = await act(game, 'reset', { mode: 'ai', humanSide: 'cho', aiLevel: 'd9' });
+  assert.equal(state.aiLevel, 'd9');
   await act(game, 'move', { move: 'a4b4' });
   assert.equal(calls[0].signal.aborted, false);
-  assert.equal(calls[0].movetimeMs, 1000);
+  assert.equal(calls[0].movetimeMs, 3000);
+  assert.equal(calls[0].skillLevel, 20);
   const before = game.snapshot();
   await assert.rejects(act(game, 'reset', { aiLevel: 'impossible' }), /난이도/);
   assert.deepEqual(game.snapshot(), before);

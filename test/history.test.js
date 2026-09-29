@@ -50,12 +50,15 @@ test('AI 응수 저장, AI 차례 복원 시 수동 재개, 저장 실패 시 �
   assert.deepEqual(game.snapshot(), before);
 });
 
-test('선택한 AI 난이도는 서버 재시작 후 복원됨', async t => {
+test('선택한 AI 급·단은 서버 재시작 후 복원되고 이전 난이도는 변환됨', async t => {
   const { storage } = fixture(t);
   const game = new Game({ storage });
-  await act(game, 'reset', { mode: 'ai', humanSide: 'cho', aiLevel: 'strong' });
+  await act(game, 'reset', { mode: 'ai', humanSide: 'cho', aiLevel: 'd7' });
   const restored = new Game({ storage });
-  assert.equal(restored.snapshot().aiLevel, 'strong');
+  assert.equal(restored.snapshot().aiLevel, 'd7');
+  const saved = storage.load();
+  storage.save({ ...saved, version: 3, aiLevel: 'strong' });
+  assert.equal(new Game({ storage }).snapshot().aiLevel, 'd4');
 });
 
 test('손상·불법 기보는 덮어쓰지 않고 로딩 실패', async t => {
