@@ -55,7 +55,8 @@ export function createServer({ game = new Game(), auth = new AuthService(), secu
         return json(201, { user });
       }
       if (authAction === 'login') {
-        const loginKey = `${req.socket.remoteAddress ?? 'unknown'}:${typeof data.email === 'string' ? data.email.trim().toLowerCase() : ''}`;
+        const loginIdentifier = data.identifier ?? data.email;
+        const loginKey = `${req.socket.remoteAddress ?? 'unknown'}:${typeof loginIdentifier === 'string' ? loginIdentifier.trim().toLowerCase() : ''}`;
         const now = Date.now();
         let attempt = loginAttempts.get(loginKey);
         if (attempt && attempt.resetAt <= now) { loginAttempts.delete(loginKey); attempt = null; }

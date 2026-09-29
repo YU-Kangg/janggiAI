@@ -23,12 +23,23 @@ func run() -> void:
 	check(not app.state.is_empty(), "initial HTTP connection")
 	check(app.page_scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_AUTO, "mobile page vertical scrolling")
 	check(app.current_role == "user" and not app.server_toggle.visible and not app.server_controls.visible, "normal account hides developer server controls")
-	app.set_account_role("admin")
-	check(app.server_toggle.visible and app.account_badge.text.contains("관리자"), "admin account exposes developer controls")
+	check(app.login_button.visible and not app.logout_button.visible, "signed-out home exposes login")
+	app.login_id.text = "testadmin"
+	app.login_password.text = "test password"
+	app.submit_login()
+	for attempt in range(100):
+		if not app.auth_token.is_empty():
+			break
+		await create_timer(0.05).timeout
+	check(app.current_role == "admin" and app.server_toggle.visible and app.account_badge.text.contains("관리자"), "server-authenticated admin exposes developer controls")
 	app.toggle_server_controls()
 	check(app.server_controls.visible and app.server_toggle.text == "서버 설정 접기", "server controls expandable")
 	app.toggle_server_controls()
-	app.set_account_role("user")
+	app.request_logout()
+	for attempt in range(100):
+		if app.auth_token.is_empty():
+			break
+		await create_timer(0.05).timeout
 	check(not app.server_toggle.visible and not app.server_controls.visible, "returning to normal account closes developer controls")
 	check(app.home_dashboard.visible and not app.game_mode_tabs.visible and not app.review_tabs.visible and not app.grid.visible, "dashboard is the focused home screen")
 	app.toggle_game_setup()

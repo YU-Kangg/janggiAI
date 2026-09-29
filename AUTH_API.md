@@ -22,12 +22,14 @@
 
 ```json
 {
-  "email": "player@example.com",
+  "identifier": "player@example.com",
   "password": "8자 이상의 비밀번호"
 }
 ```
 
 웹 클라이언트에는 `janggi_session` HttpOnly 쿠키를 설정하고 본문에는 회원과 만료 시각만 반환합니다. Android 앱은 `X-Janggi-Client: mobile` 헤더를 보내면 본문에 Bearer 토큰도 받습니다. 모바일 토큰은 Android Keystore 기반 안전 저장소에 보관해야 합니다.
+
+일반 회원은 이메일을 식별자로 사용합니다. 별도로 생성된 관리자 계정은 이메일 대신 관리자 아이디로 로그인할 수 있으며, 서버가 반환한 `user.role`이 `admin`일 때만 개발자 기능을 표시해야 합니다.
 
 ## 현재 세션
 

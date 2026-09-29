@@ -11,6 +11,10 @@ const DUMMY_PASSWORD = {
 };
 const fail = (message, status) => Object.assign(new Error(message), { status });
 const normalizeEmail = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
+const normalizeLogin = value => {
+  const identifier = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return identifier.includes('@') ? identifier : `${identifier}@admin.nyanggi.local`;
+};
 const validEmail = value => typeof value === 'string' && value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value);
 const publicUser = user => ({ id: user.id, email: user.email, name: user.name, role: user.role, createdAt: user.createdAt });
 const tokenDigest = token => createHash('sha256').update(token).digest('base64url');
@@ -57,7 +61,7 @@ export class AuthService {
     const hash = typeof user?.password?.hash === 'string' ? Buffer.from(user.password.hash, 'base64') : Buffer.alloc(0);
     if (!user || typeof user.id !== 'string' || !validEmail(user.email) || typeof user.name !== 'string'
       || user.name.length < 2 || user.name.length > 20
-      || user.role !== 'user' || user.password?.algorithm !== 'scrypt' || typeof user.password.salt !== 'string'
+      || !['user', 'admin'].includes(user.role) || user.password?.algorithm !== 'scrypt' || typeof user.password.salt !== 'string'
       || typeof user.password.hash !== 'string' || salt.length !== 16 || hash.length !== 32
       || typeof user.createdAt !== 'string' || !Number.isFinite(Date.parse(user.createdAt))) {
       throw new Error('저장된 회원 정보 형식이 올바르지 않습니다.');
@@ -111,7 +115,7 @@ export class AuthService {
   }
 
   async login(input) {
-    const value = this.validateInput(input, false);
+    const value = this.validateInput({ ...input, email: normalizeLogin(input.identifier ?? input.email) }, false);
     const found = await this.repository.findUserByEmail(value.email);
     const user = found ? this.validateStoredUser(found) : null;
     const matches = await this.passwordMatches(value.password, user?.password ?? DUMMY_PASSWORD);

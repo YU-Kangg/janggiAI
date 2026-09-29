@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS members (
   created_at DATETIME(3) NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uq_members_email (email),
-  CONSTRAINT chk_members_role CHECK (role IN ('user'))
+  CONSTRAINT chk_members_role CHECK (role IN ('user', 'admin'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS auth_sessions (

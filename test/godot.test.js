@@ -5,10 +5,17 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { resolve } from 'node:path';
 import { createServer } from '../server/index.js';
+import { AuthService, MemoryAuthRepository } from '../server/auth.js';
 
 const executable = process.env.JANGGI_GODOT_PATH || resolve('.local/godot/Godot_v4.7.2-stable_win64_console.exe');
 test('Godot 실제 클라이언트: 대국·복기 서버 분석·초한 AI 응수·연결 오류', { skip: !existsSync(executable), timeout: 45000 }, async t => {
-  const server = createServer();
+  const repository = new MemoryAuthRepository();
+  const auth = new AuthService({ repository });
+  await repository.createUser({
+    id: '6370c1b4-bc32-4994-8986-fefc2e216ae6', email: 'testadmin@admin.nyanggi.local', name: '테스트 관리자', role: 'admin',
+    password: await auth.passwordRecord('test password'), createdAt: new Date().toISOString(),
+  });
+  const server = createServer({ auth });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => { server.closeAllConnections(); server.close(); });
   const child = spawn(executable, ['--headless', '--path', resolve('godot'), '--script', 'res://smoke.gd', '--', `--server=http://127.0.0.1:${server.address().port}`], { windowsHide: true });

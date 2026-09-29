@@ -42,6 +42,19 @@ test('로그인 세션은 조회·로그아웃·만료를 처리하고 오류는
   assert.equal(await auth.session(expiring.token), null);
 });
 
+test('관리자 아이디 로그인은 admin 역할을 세션에 유지', async () => {
+  const repository = new MemoryAuthRepository();
+  const auth = new AuthService({ repository });
+  const password = await auth.passwordRecord('administrator password');
+  await repository.createUser({
+    id: '079e7971-5821-4f16-98fd-e797ad63c794', email: 'admin@admin.nyanggi.local', name: '개발자',
+    role: 'admin', password, createdAt: new Date().toISOString(),
+  });
+  const login = await auth.login({ identifier: 'admin', password: 'administrator password' });
+  assert.equal(login.user.role, 'admin');
+  assert.equal((await auth.session(login.token)).user.role, 'admin');
+});
+
 test('인증 HTTP API는 HttpOnly 쿠키와 Bearer 세션을 지원하고 비밀번호를 노출하지 않음', async t => {
   const base = await startServer(t);
   let response = await fetch(`${base}/api/auth/register`, {

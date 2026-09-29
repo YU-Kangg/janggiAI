@@ -13,6 +13,16 @@ var server_controls := VBoxContainer.new()
 var server_toggle := Button.new()
 var account_badge := Label.new()
 var current_role := "user"
+var auth_api := HTTPRequest.new()
+var auth_path := ""
+var auth_token := ""
+var auth_user: Dictionary = {}
+var login_button := Button.new()
+var logout_button := Button.new()
+var login_dialog := ConfirmationDialog.new()
+var login_id := LineEdit.new()
+var login_password := LineEdit.new()
+var login_error := Label.new()
 var screen_mode := "home"
 var home_section := "dashboard"
 var home_button := Button.new()
@@ -326,9 +336,9 @@ func toggle_game_setup() -> void:
 	else:
 		show_home_setup(game_mode_tabs.current_tab)
 
-func set_account_role(role: String) -> void:
+func set_account_role(role: String, display_name := "") -> void:
 	current_role = "admin" if role == "admin" else "user"
-	account_badge.text = "관리자 계정 · 개발자 기능" if current_role == "admin" else "일반 사용자"
+	account_badge.text = ("관리자 %s · 개발자 기능" % display_name) if current_role == "admin" else (display_name if not display_name.is_empty() else "일반 사용자")
 	if current_role != "admin":
 		server_controls.visible = false
 		server_toggle.text = "서버 기능 연결"
@@ -363,7 +373,9 @@ func sync_screen_visibility() -> void:
 	app_title.text = "경기 기록" if recording else ("게임 리뷰" if reviewing else ("고양이 장기 · 대국" if playing else "장기"))
 	app_title.add_theme_color_override("font_color", Color("845847"))
 	home_dashboard.visible = not playing and home_section == "dashboard"
-	account_badge.visible = not playing and home_section == "dashboard" and current_role == "admin"
+	account_badge.visible = not playing and home_section == "dashboard" and not auth_token.is_empty()
+	login_button.visible = not playing and home_section == "dashboard" and auth_token.is_empty()
+	logout_button.visible = not playing and home_section == "dashboard" and not auth_token.is_empty()
 	home_button.visible = playing or reviewing or recording
 	play_button.visible = false
 	bottom_navigation.visible = not playing and not reviewing and not recording
@@ -472,6 +484,12 @@ func _ready() -> void:
 	column.add_child(navigation)
 	account_badge.text = "일반 사용자"
 	navigation.add_child(account_badge)
+	login_button.text = "로그인"
+	login_button.pressed.connect(open_login)
+	navigation.add_child(login_button)
+	logout_button.text = "로그아웃"
+	logout_button.pressed.connect(request_logout)
+	navigation.add_child(logout_button)
 	home_button.text = "메인으로"
 	home_button.pressed.connect(show_home_screen)
 	navigation.add_child(home_button)
@@ -559,8 +577,6 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--server="):
 			endpoint.text = arg.trim_prefix("--server=")
-		elif arg == "--role=admin":
-			current_role = "admin"
 	server_toggle.text = "서버 기능 연결"
 	server_toggle.pressed.connect(toggle_server_controls)
 	column.add_child(server_toggle)
@@ -937,6 +953,23 @@ func _ready() -> void:
 	setup_form.add_child(han_setup)
 	setup_dialog.add_child(setup_form)
 	add_child(setup_dialog)
+	login_dialog.title = "계정 로그인"
+	login_dialog.get_ok_button().text = "로그인"
+	login_dialog.get_cancel_button().text = "취소"
+	login_dialog.confirmed.connect(submit_login)
+	var login_form := VBoxContainer.new()
+	login_form.position = Vector2(20, 42)
+	login_form.custom_minimum_size = Vector2(410, 190)
+	login_id.placeholder_text = "아이디 또는 이메일"
+	login_form.add_child(login_id)
+	login_password.placeholder_text = "비밀번호"
+	login_password.secret = true
+	login_form.add_child(login_password)
+	login_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	login_error.add_theme_color_override("font_color", Color("b24d45"))
+	login_form.add_child(login_error)
+	login_dialog.add_child(login_form)
+	add_child(login_dialog)
 	resign_dialog.dialog_text = "현재 차례 진영이 기권할까요?"
 	resign_dialog.title = "기권 확인"
 	resign_dialog.get_ok_button().text = "기권"
@@ -952,6 +985,9 @@ func _ready() -> void:
 	api.timeout = 8.0
 	api.request_completed.connect(on_response)
 	add_child(api)
+	auth_api.timeout = 8.0
+	auth_api.request_completed.connect(on_auth_response)
+	add_child(auth_api)
 	branch_api.timeout = 20.0
 	branch_api.request_completed.connect(on_branch_response)
 	add_child(branch_api)
@@ -966,6 +1002,52 @@ func _ready() -> void:
 	else:
 		screen_mode = "home"
 		sync_screen_visibility()
+
+func open_login() -> void:
+	login_error.text = ""
+	login_password.text = ""
+	login_dialog.popup_centered(Vector2i(470, 280))
+
+func submit_login() -> void:
+	var identifier := login_id.text.strip_edges()
+	if identifier.is_empty() or login_password.text.length() < 8:
+		login_error.text = "아이디와 8자 이상의 비밀번호를 입력하세요."
+		login_dialog.popup_centered(Vector2i(470, 280))
+		return
+	var url := endpoint.text.strip_edges().trim_suffix("/")
+	auth_path = "login"
+	var error := auth_api.request(url + "/api/auth/login", ["Content-Type: application/json", "X-Janggi-Client: mobile"], HTTPClient.METHOD_POST,
+		JSON.stringify({"identifier": identifier, "password": login_password.text}))
+	if error != OK:
+		login_error.text = "로그인 서버에 연결하지 못했습니다."
+		login_dialog.popup_centered(Vector2i(470, 280))
+
+func request_logout() -> void:
+	if auth_token.is_empty():
+		return
+	auth_path = "logout"
+	var url := endpoint.text.strip_edges().trim_suffix("/")
+	auth_api.request(url + "/api/auth/logout", ["Content-Type: application/json", "Authorization: Bearer " + auth_token], HTTPClient.METHOD_POST, "{}")
+
+func on_auth_response(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	var payload = JSON.parse_string(body.get_string_from_utf8())
+	if result != HTTPRequest.RESULT_SUCCESS or not payload is Dictionary:
+		login_error.text = "로그인 서버에 연결하지 못했습니다."
+		login_dialog.popup_centered(Vector2i(470, 280))
+		return
+	if auth_path == "logout":
+		auth_token = ""
+		auth_user = {}
+		set_account_role("user")
+		return
+	if code != 200 or not payload.get("user") is Dictionary or str(payload.get("token", "")).is_empty():
+		login_error.text = str(payload.get("error", "로그인에 실패했습니다."))
+		login_dialog.popup_centered(Vector2i(470, 280))
+		return
+	auth_token = str(payload.token)
+	auth_user = payload.user
+	login_password.text = ""
+	set_account_role(str(auth_user.get("role", "user")), str(auth_user.get("name", "")))
 
 func arrangement_value(index: int) -> String:
 	return SETUPS[clampi(index, 0, 3)]
