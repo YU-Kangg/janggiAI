@@ -1,17 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { AuthService } from '../server/auth.js';
+import { AuthService, MemoryAuthRepository } from '../server/auth.js';
 import { createServer } from '../server/index.js';
-
-function memoryStorage(initial = null) {
-  let value = initial;
-  return {
-    load: () => value == null ? null : structuredClone(value),
-    save: next => { value = structuredClone(next); },
-    value: () => structuredClone(value),
-  };
-}
 
 async function startServer(t, auth = new AuthService()) {
   const server = createServer({ auth });
@@ -22,16 +13,15 @@ async function startServer(t, auth = new AuthService()) {
 }
 
 test('회원가입은 이메일을 정규화하고 비밀번호 원문 없이 저장', async () => {
-  const storage = memoryStorage();
-  const auth = new AuthService({ storage, now: () => Date.UTC(2026, 8, 29) });
+  const repository = new MemoryAuthRepository();
+  const auth = new AuthService({ repository, now: () => Date.UTC(2026, 8, 29) });
   const user = await auth.register({ email: ' Player@Example.COM ', password: '긴 비밀번호 1234', name: ' 장기인 ' });
   assert.equal(user.email, 'player@example.com');
   assert.equal(user.name, '장기인');
   assert.equal(user.role, 'user');
   assert.equal(user.password, undefined);
-  const saved = storage.value();
-  assert.equal(saved.version, 1);
-  assert.equal(saved.users[0].password.algorithm, 'scrypt');
+  const saved = await repository.findUserByEmail('player@example.com');
+  assert.equal(saved.password.algorithm, 'scrypt');
   assert.ok(!JSON.stringify(saved).includes('긴 비밀번호 1234'));
   await assert.rejects(auth.register({ email: 'PLAYER@example.com', password: 'another password', name: '다른 사용자' }), /이미 가입/);
 });
@@ -44,12 +34,12 @@ test('로그인 세션은 조회·로그아웃·만료를 처리하고 오류는
   await assert.rejects(auth.login({ email: 'nobody@example.com', password: 'wrong password' }), /이메일 또는 비밀번호/);
   const login = await auth.login({ email: 'PLAYER@example.com', password: 'correct password' });
   assert.equal(login.token.length, 43);
-  assert.equal(auth.session(login.token).user.id, user.id);
-  auth.logout(login.token);
-  assert.equal(auth.session(login.token), null);
+  assert.equal((await auth.session(login.token)).user.id, user.id);
+  await auth.logout(login.token);
+  assert.equal(await auth.session(login.token), null);
   const expiring = await auth.login({ email: user.email, password: 'correct password' });
   now += 8 * 24 * 60 * 60 * 1000;
-  assert.equal(auth.session(expiring.token), null);
+  assert.equal(await auth.session(expiring.token), null);
 });
 
 test('인증 HTTP API는 HttpOnly 쿠키와 Bearer 세션을 지원하고 비밀번호를 노출하지 않음', async t => {
@@ -106,9 +96,10 @@ test('회원 입력과 손상된 저장 데이터는 거부', async () => {
   await assert.rejects(auth.register({ email: 'invalid', password: 'correct password', name: '장기인' }), /이메일/);
   await assert.rejects(auth.register({ email: 'a@example.com', password: 'short', name: '장기인' }), /8~128자/);
   await assert.rejects(auth.register({ email: 'a@example.com', password: 'correct password', name: '한' }), /2~20자/);
-  assert.throws(() => new AuthService({ storage: memoryStorage({ version: 1, users: [{}] }) }), /회원 정보/);
-  assert.throws(() => new AuthService({ storage: memoryStorage({ version: 1, users: [{
-    id: 'id', email: null, name: '장기인', role: 'user', createdAt: 'invalid',
-    password: { algorithm: 'scrypt', salt: '', hash: '' },
-  }] }) }), /회원 정보/);
+  const repository = new MemoryAuthRepository();
+  repository.users.set('broken@example.com', { id: 'id', email: null, name: '장기인', role: 'user', createdAt: 'invalid',
+    password: { algorithm: 'scrypt', salt: '', hash: '' } });
+  await assert.rejects(new AuthService({ repository }).login({
+    email: 'broken@example.com', password: 'correct password',
+  }), /회원 정보/);
 });

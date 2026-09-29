@@ -90,7 +90,7 @@ SharedArrayBuffer·WASM SIMD 지원 및 보안 컨텍스트(HTTPS 또는 localho
 현재 한 판만 저장하므로 새 대국을 시작하면 기존 저장 기보를 교체합니다. 여러 대국 보관·내보내기는 미구현입니다.
 파일 저장 실패 시 해당 착수를 적용하지 않습니다. 저장 파일이 손상되면 서버가 시작되지 않으며 파일은 보존됩니다.
 여러 탭에서 동시에 착수하면 오래된 요청은 거부합니다. 화면은 500ms 간격으로 상태를 조회합니다.
-회원가입·로그인·로그아웃·세션 확인 백엔드 기반을 제공합니다. 회원 데이터는 현재 `.local/members.json`, 세션은 단일 서버 메모리에 저장하므로 아직 외부 공개 운영 구성은 아닙니다. API 사용법은 [AUTH_API.md](AUTH_API.md), 후속 작업은 [ONLINE_SERVICE_CHECKLIST.md](ONLINE_SERVICE_CHECKLIST.md)를 참고하세요.
+회원가입·로그인·로그아웃·세션 확인 백엔드 기반을 제공합니다. 운영 회원과 세션은 `MYSQL_URL`로 지정한 MySQL에 저장하며 운영 모드는 DB 연결 없이는 시작되지 않습니다. API와 DB 설정은 [AUTH_API.md](AUTH_API.md), 후속 작업은 [ONLINE_SERVICE_CHECKLIST.md](ONLINE_SERVICE_CHECKLIST.md)를 참고하세요.
 
 ## 구성과 이어서 할 일
 

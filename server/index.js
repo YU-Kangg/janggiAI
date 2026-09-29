@@ -73,11 +73,11 @@ export function createServer({ game = new Game(), auth = new AuthService(), secu
         }
       }
       if (authAction === 'session') {
-        const session = auth.session(requestToken(req));
+        const session = await auth.session(requestToken(req));
         return session ? json(200, session) : json(401, { error: '로그인이 필요합니다.' });
       }
       if (authAction === 'logout') {
-        auth.logout(requestToken(req));
+        await auth.logout(requestToken(req));
         res.setHeader('Set-Cookie', sessionCookie('', { secure: secureCookies, clear: true }));
         return json(200, { ok: true });
       }
@@ -147,15 +147,33 @@ export function createServer({ game = new Game(), auth = new AuthService(), secu
       json(error.status || 503, { error: error.message });
     }
   });
-  server.on('close', () => { game.stopAi(); game.stopFullReview(); recordReview?.stopFullReview(); });
+  server.on('close', () => {
+    game.stopAi(); game.stopFullReview(); recordReview?.stopFullReview();
+    auth.close().catch(() => {});
+  });
   return server;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const port = Number(process.env.PORT || 3000);
-  const storage = fileStorage(fileURLToPath(new URL('../.local/current-game.json', import.meta.url)));
-  const memberStorage = fileStorage(fileURLToPath(new URL('../.local/members.json', import.meta.url)));
-  const server = createServer({ game: new Game({ storage }), auth: new AuthService({ storage: memberStorage }), secureCookies: process.env.NODE_ENV === 'production' });
-  server.on('error', error => { console.error(error.message); process.exitCode = 1; });
-  server.listen(port, '127.0.0.1', () => console.log(`장기 연습판: http://127.0.0.1:${port}`));
+  const start = async () => {
+    const port = Number(process.env.PORT || 3000);
+    const storage = fileStorage(fileURLToPath(new URL('../.local/current-game.json', import.meta.url)));
+    let auth;
+    if (process.env.MYSQL_URL) {
+      const { MySqlAuthRepository } = await import('./mysql-auth-repository.js');
+      const repository = MySqlAuthRepository.fromUrl(process.env.MYSQL_URL, {
+        autoMigrate: process.env.MYSQL_AUTO_MIGRATE === 'true',
+      });
+      await repository.initialize();
+      auth = new AuthService({ repository });
+    } else {
+      if (process.env.NODE_ENV === 'production') throw new Error('운영 서버에는 MYSQL_URL이 필요합니다.');
+      console.warn('MYSQL_URL이 없어 회원·세션을 개발용 메모리에만 저장합니다.');
+      auth = new AuthService();
+    }
+    const server = createServer({ game: new Game({ storage }), auth, secureCookies: process.env.NODE_ENV === 'production' });
+    server.on('error', error => { console.error(error.message); process.exitCode = 1; });
+    server.listen(port, '127.0.0.1', () => console.log(`장기 연습판: http://127.0.0.1:${port}`));
+  };
+  start().catch(error => { console.error(error.message); process.exitCode = 1; });
 }

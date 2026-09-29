@@ -10,22 +10,46 @@ const DUMMY_PASSWORD = {
   hash: scryptSync('invalid-login-password', dummySalt, 32, SCRYPT_OPTIONS).toString('base64'),
 };
 const fail = (message, status) => Object.assign(new Error(message), { status });
-
 const normalizeEmail = value => typeof value === 'string' ? value.trim().toLowerCase() : '';
 const validEmail = value => typeof value === 'string' && value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value);
 const publicUser = user => ({ id: user.id, email: user.email, name: user.name, role: user.role, createdAt: user.createdAt });
 const tokenDigest = token => createHash('sha256').update(token).digest('base64url');
 
-export class AuthService {
-  constructor({ storage = null, now = () => Date.now() } = {}) {
-    this.storage = storage;
-    this.now = now;
+export class MemoryAuthRepository {
+  constructor() {
+    this.users = new Map();
+    this.userIds = new Map();
     this.sessions = new Map();
-    this.mutation = Promise.resolve();
-    const saved = storage?.load();
-    if (saved && (saved.version !== 1 || !Array.isArray(saved.users))) throw new Error('저장된 회원 정보 형식이 올바르지 않습니다.');
-    this.users = saved?.users ?? [];
-    for (const user of this.users) this.validateStoredUser(user);
+  }
+
+  async initialize() {}
+  async findUserByEmail(email) { return this.users.get(email) ?? null; }
+  async createUser(user) {
+    if (this.users.has(user.email)) throw Object.assign(new Error('Duplicate email'), { code: 'ER_DUP_ENTRY' });
+    this.users.set(user.email, structuredClone(user));
+    this.userIds.set(user.id, this.users.get(user.email));
+  }
+  async createSession(session) { this.sessions.set(session.tokenHash, { ...session }); }
+  async findSession(tokenHash, now) {
+    const session = this.sessions.get(tokenHash);
+    if (!session || session.expiresAt <= now) {
+      if (session) this.sessions.delete(tokenHash);
+      return null;
+    }
+    const user = this.userIds.get(session.userId);
+    return user ? { user: structuredClone(user), expiresAt: session.expiresAt } : null;
+  }
+  async deleteSession(tokenHash) { this.sessions.delete(tokenHash); }
+  async deleteExpiredSessions(now) {
+    for (const [key, session] of this.sessions) if (session.expiresAt <= now) this.sessions.delete(key);
+  }
+  async close() {}
+}
+
+export class AuthService {
+  constructor({ repository = new MemoryAuthRepository(), now = () => Date.now() } = {}) {
+    this.repository = repository;
+    this.now = now;
   }
 
   validateStoredUser(user) {
@@ -38,6 +62,7 @@ export class AuthService {
       || typeof user.createdAt !== 'string' || !Number.isFinite(Date.parse(user.createdAt))) {
       throw new Error('저장된 회원 정보 형식이 올바르지 않습니다.');
     }
+    return user;
   }
 
   validateInput({ email, password, name }, registering = false) {
@@ -72,67 +97,49 @@ export class AuthService {
   async register(input) {
     const value = this.validateInput(input, true);
     const password = await this.passwordRecord(value.password);
-    return this.enqueue(async () => {
-      if (this.users.some(user => user.email === value.email)) throw fail('이미 가입된 이메일입니다.', 409);
-      const user = {
-        id: randomUUID(), email: value.email, name: value.name, role: 'user', password,
-        createdAt: new Date(this.now()).toISOString(),
-      };
-      const next = [...this.users, user];
-      this.storage?.save({ version: 1, users: next });
-      this.users = next;
-      return publicUser(user);
-    });
+    if (await this.repository.findUserByEmail(value.email)) throw fail('이미 가입된 이메일입니다.', 409);
+    const user = {
+      id: randomUUID(), email: value.email, name: value.name, role: 'user', password,
+      createdAt: new Date(this.now()).toISOString(),
+    };
+    try { await this.repository.createUser(user); }
+    catch (error) {
+      if (error.code === 'ER_DUP_ENTRY') throw fail('이미 가입된 이메일입니다.', 409);
+      throw error;
+    }
+    return publicUser(user);
   }
 
   async login(input) {
     const value = this.validateInput(input, false);
-    const user = this.users.find(candidate => candidate.email === value.email);
-    const fallback = user?.password ?? DUMMY_PASSWORD;
-    const matches = await this.passwordMatches(value.password, fallback);
+    const found = await this.repository.findUserByEmail(value.email);
+    const user = found ? this.validateStoredUser(found) : null;
+    const matches = await this.passwordMatches(value.password, user?.password ?? DUMMY_PASSWORD);
     if (!user || !matches) throw fail('이메일 또는 비밀번호가 올바르지 않습니다.', 401);
     return this.createSession(user);
   }
 
-  createSession(user) {
-    this.removeExpiredSessions();
+  async createSession(user) {
     const token = randomBytes(32).toString('base64url');
     const expiresAt = this.now() + SESSION_TTL_MS;
-    this.sessions.set(tokenDigest(token), { userId: user.id, expiresAt });
+    await this.repository.deleteExpiredSessions(this.now());
+    await this.repository.createSession({ tokenHash: tokenDigest(token), userId: user.id, expiresAt, createdAt: this.now() });
     return { token, expiresAt: new Date(expiresAt).toISOString(), user: publicUser(user) };
   }
 
-  session(token) {
+  async session(token) {
     if (typeof token !== 'string' || !token) return null;
-    const key = tokenDigest(token);
-    const session = this.sessions.get(key);
+    const session = await this.repository.findSession(tokenDigest(token), this.now());
     if (!session) return null;
-    if (session.expiresAt <= this.now()) {
-      this.sessions.delete(key);
-      return null;
-    }
-    const user = this.users.find(candidate => candidate.id === session.userId);
-    if (!user) {
-      this.sessions.delete(key);
-      return null;
-    }
+    const user = this.validateStoredUser(session.user);
     return { user: publicUser(user), expiresAt: new Date(session.expiresAt).toISOString() };
   }
 
-  logout(token) {
-    if (typeof token === 'string' && token) this.sessions.delete(tokenDigest(token));
+  async logout(token) {
+    if (typeof token === 'string' && token) await this.repository.deleteSession(tokenDigest(token));
   }
 
-  removeExpiredSessions() {
-    const now = this.now();
-    for (const [key, session] of this.sessions) if (session.expiresAt <= now) this.sessions.delete(key);
-  }
-
-  enqueue(operation) {
-    const result = this.mutation.then(operation);
-    this.mutation = result.catch(() => {});
-    return result;
-  }
+  async close() { await this.repository.close(); }
 }
 
 export const sessionCookie = (token, { secure = false, clear = false } = {}) => [

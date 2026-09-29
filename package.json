@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "fairy-stockfish-nnue.wasm": "1.1.12",
-    "ffish-es6": "0.7.10"
+    "ffish-es6": "0.7.10",
+    "mysql2": "^3.24.4"
   },
   "devDependencies": {
     "playwright-core": "1.58.2"

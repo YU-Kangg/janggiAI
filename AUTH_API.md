@@ -47,11 +47,23 @@ Authorization: Bearer <token>
 
 쿠키 또는 Bearer 토큰으로 식별한 서버 세션을 폐기하고 쿠키를 삭제합니다. 이미 만료된 세션도 `200`으로 처리합니다.
 
+## MySQL 연결
+
+회원과 세션은 MySQL의 `members`, `auth_sessions` 테이블에 저장합니다. SQL 원본은 `server/migrations/001_auth_mysql.sql`입니다.
+
+```text
+MYSQL_URL=mysql://janggi_app:password@127.0.0.1:3306/janggi
+```
+
+로컬 최초 설정에서는 `MYSQL_AUTO_MIGRATE=true`를 함께 지정하면 테이블을 자동 생성합니다. 운영 환경은 배포 전에 별도 마이그레이션 계정으로 SQL을 실행하고 애플리케이션에서는 이 값을 사용하지 않습니다. 평상시 서버는 연결과 두 테이블의 존재만 확인하므로 애플리케이션 계정에는 회원·세션 테이블의 `SELECT`, `INSERT`, `DELETE` 권한만 부여할 수 있습니다.
+
+TLS가 필요한 MySQL 서비스는 연결 문자열 끝에 `?ssl=true`를 지정합니다. 운영용 DB 비밀번호는 `.env`를 Git에 추가하지 말고 배포 환경의 비밀 저장소에서 주입해야 합니다.
+
 ## 현재 운영 제약
 
-- 로그인 세션은 서버 재시작 시 모두 만료됩니다.
+- `MYSQL_URL`이 설정된 서버에서는 로그인 세션이 서버 재시작 후에도 유지됩니다.
+- 개발 모드에서 `MYSQL_URL`이 없으면 회원·세션은 메모리에만 저장합니다. 운영 모드는 연결 문자열 없이는 시작되지 않습니다.
 - 로컬 HTTP 개발에서는 Secure 쿠키를 사용하지 않습니다. `NODE_ENV=production`에서는 Secure 속성을 설정하므로 HTTPS 앞에서 실행해야 합니다.
-- 회원 정보는 개발용 JSON 파일에 저장합니다. 외부 서비스 전에는 운영 DB와 마이그레이션이 필요합니다.
 - 이메일 인증, 비밀번호 재설정, 탈퇴와 개인정보 처리 흐름은 아직 구현하지 않았습니다.
 
 비밀번호 저장과 세션 정책은 [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)와 [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)를 기준으로 구성했습니다.
