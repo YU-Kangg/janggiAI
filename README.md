@@ -90,7 +90,7 @@ SharedArrayBuffer·WASM SIMD 지원 및 보안 컨텍스트(HTTPS 또는 localho
 현재 한 판만 저장하므로 새 대국을 시작하면 기존 저장 기보를 교체합니다. 여러 대국 보관·내보내기는 미구현입니다.
 파일 저장 실패 시 해당 착수를 적용하지 않습니다. 저장 파일이 손상되면 서버가 시작되지 않으며 파일은 보존됩니다.
 여러 탭에서 동시에 착수하면 오래된 요청은 거부합니다. 화면은 500ms 간격으로 상태를 조회합니다.
-외부 공개 배포·계정·결제·온라인 대전용 구조는 아직 아닙니다.
+회원가입·로그인·로그아웃·세션 확인 백엔드 기반을 제공합니다. 회원 데이터는 현재 `.local/members.json`, 세션은 단일 서버 메모리에 저장하므로 아직 외부 공개 운영 구성은 아닙니다. API 사용법은 [AUTH_API.md](AUTH_API.md), 후속 작업은 [ONLINE_SERVICE_CHECKLIST.md](ONLINE_SERVICE_CHECKLIST.md)를 참고하세요.
 
 ## 구성과 이어서 할 일
 
@@ -98,6 +98,7 @@ SharedArrayBuffer·WASM SIMD 지원 및 보안 컨텍스트(HTTPS 또는 localho
 - `server/engine.js`: 엔진 명령과 응답 해석. 요청별 별도 프로세스 사용.
 - `server/rules.js`: 차림 생성, 합법 수·승패 판정, 기물 점수.
 - `server/game.js`: 기보·착수 검증·상태 변경.
+- `server/auth.js`: 회원 입력, scrypt 비밀번호 검증과 세션 관리.
 - `server/storage.js`: 현재 대국 파일 저장·복원. 임시 파일 작성 후 교체.
 - `server/index.js`: 로컬 HTTP 서버와 요청 순서 제어.
 - `test/game.test.js`: 실제 엔진 및 HTTP 통합 검증.

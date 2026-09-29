@@ -5,12 +5,14 @@ import { Game, reviewEntry } from './game.js';
 import { fileStorage } from './storage.js';
 import { randomUUID } from 'node:crypto';
 import { initialFen, rulePosition } from './rules.js';
+import { AuthService, requestToken, sessionCookie } from './auth.js';
 
-export function createServer({ game = new Game() } = {}) {
+export function createServer({ game = new Game(), auth = new AuthService(), secureCookies = false } = {}) {
   let queue = Promise.resolve();
   let recordReview = null;
   let recordJobId = null;
   let recordIdentity = null;
+  const loginAttempts = new Map();
   const files = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'] };
   for (const name of ['analysis-worker.js', 'local-analysis.js']) files[`/${name}`] = [name, 'text/javascript'];
   for (const name of ['stockfish.js', 'stockfish.worker.js', 'stockfish.wasm', 'Copying.txt']) {
@@ -33,19 +35,52 @@ export function createServer({ game = new Game() } = {}) {
         res.writeHead(200, { 'Content-Type': `${type}; charset=utf-8` });
         return res.end(body);
       }
+      const authAction = /^\/api\/auth\/(register|login|logout|session)$/.exec(req.url)?.[1];
       const action = /^\/api\/(move|undo|reset|resign|draw|recommend|cancel-ai|resume-ai|review|review-analysis|review-start|review-status|review-latest|review-cancel|record-review-start|record-review-status|review-position|variation)$/.exec(req.url)?.[1];
-      if (!(req.method === 'GET' && req.url === '/api/game') && !(req.method === 'POST' && action)) {
+      const validAuthMethod = authAction === 'session' ? req.method === 'GET' : req.method === 'POST';
+      if (!(req.method === 'GET' && req.url === '/api/game') && !(req.method === 'POST' && action) && !(authAction && validAuthMethod)) {
         return json(404, { error: '요청 경로를 찾을 수 없습니다.' });
       }
       let body = '';
       for await (const chunk of req) {
         body += chunk;
-        if (body.length > (['record-review-start', 'review-position'].includes(action) ? 32768 : 2048)) return json(413, { error: '요청이 너무 큽니다.' });
+        if (body.length > (['record-review-start', 'review-position'].includes(action) ? 32768 : authAction ? 4096 : 2048)) return json(413, { error: '요청이 너무 큽니다.' });
       }
       let data = {};
       try { data = body ? JSON.parse(body) : {}; }
       catch { return json(400, { error: '요청 형식이 올바르지 않습니다.' }); }
       if (!data || typeof data !== 'object' || Array.isArray(data)) return json(400, { error: '요청 형식이 올바르지 않습니다.' });
+      if (authAction === 'register') {
+        const user = await auth.register(data);
+        return json(201, { user });
+      }
+      if (authAction === 'login') {
+        const loginKey = `${req.socket.remoteAddress ?? 'unknown'}:${typeof data.email === 'string' ? data.email.trim().toLowerCase() : ''}`;
+        const now = Date.now();
+        let attempt = loginAttempts.get(loginKey);
+        if (attempt && attempt.resetAt <= now) { loginAttempts.delete(loginKey); attempt = null; }
+        if (attempt?.count >= 5) return json(429, { error: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.' });
+        try {
+          const session = await auth.login(data);
+          loginAttempts.delete(loginKey);
+          res.setHeader('Set-Cookie', sessionCookie(session.token, { secure: secureCookies }));
+          const response = { user: session.user, expiresAt: session.expiresAt };
+          if (req.headers['x-janggi-client'] === 'mobile') response.token = session.token;
+          return json(200, response);
+        } catch (error) {
+          if (error.status === 401) loginAttempts.set(loginKey, { count: (attempt?.count ?? 0) + 1, resetAt: now + 15 * 60 * 1000 });
+          throw error;
+        }
+      }
+      if (authAction === 'session') {
+        const session = auth.session(requestToken(req));
+        return session ? json(200, session) : json(401, { error: '로그인이 필요합니다.' });
+      }
+      if (authAction === 'logout') {
+        auth.logout(requestToken(req));
+        res.setHeader('Set-Cookie', sessionCookie('', { secure: secureCookies, clear: true }));
+        return json(200, { ok: true });
+      }
       if (action === 'review-position') {
         if (!Array.isArray(data.moves) || data.moves.length > 1152 || data.moves.some(move => typeof move !== 'string')
           || typeof data.initialFen !== 'string' || data.initialFen.length > 160) return json(400, { error: '분기 기보가 올바르지 않습니다.' });
@@ -119,7 +154,8 @@ export function createServer({ game = new Game() } = {}) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT || 3000);
   const storage = fileStorage(fileURLToPath(new URL('../.local/current-game.json', import.meta.url)));
-  const server = createServer({ game: new Game({ storage }) });
+  const memberStorage = fileStorage(fileURLToPath(new URL('../.local/members.json', import.meta.url)));
+  const server = createServer({ game: new Game({ storage }), auth: new AuthService({ storage: memberStorage }), secureCookies: process.env.NODE_ENV === 'production' });
   server.on('error', error => { console.error(error.message); process.exitCode = 1; });
   server.listen(port, '127.0.0.1', () => console.log(`장기 연습판: http://127.0.0.1:${port}`));
 }
