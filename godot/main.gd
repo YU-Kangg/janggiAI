@@ -153,7 +153,16 @@ var compact_review_footer := VBoxContainer.new()
 var compact_move := Label.new()
 var compact_previous := Button.new()
 var compact_next := Button.new()
-var compact_moves := OptionButton.new()
+var compact_resume := Button.new()
+var review_overlay = preload("res://review_overlay.gd").new()
+var branch_api := HTTPRequest.new()
+var branch_entry: Dictionary = {}
+var branch_error := ""
+var branch_busy := false
+var branch_fen := ""
+var branch_moves: Array = []
+var branch_first_square := ""
+var branch_first_piece := ""
 var compact_analyze := Button.new()
 var record_open_requested := false
 var review_grade_requested := false
@@ -277,7 +286,7 @@ func update_record_summary() -> void:
 		record_status.text = "Stockfish 분석 중 · %d / %d수\n평가가 끝나면 리뷰 화면으로 이동합니다." % [int(full_review.completed), int(full_review.total)]
 		record_start.text = "분석 중…"
 	elif phase == "complete":
-		record_status.text = "분석 완료 · %d수\nFairy-Stockfish 장기 평가 · 탁월수: 평가 손실 15cp 이하인 비최선수" % results.size()
+		record_status.text = "분석 완료 · %d수\n탁월수는 희생의 보상이 확인된 중요한 수입니다." % results.size()
 	elif phase in ["failed", "cancelled", "error"]:
 		record_status.text = "분석을 완료하지 못했습니다. 다시 시도해 주세요."
 	else:
@@ -664,7 +673,7 @@ func _ready() -> void:
 		heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		stats.add_child(heading)
-	var grades := {"excellent": "탁월수", "best": "최선수", "good": "좋은 수", "inaccuracy": "부정확한 수", "mistake": "실수", "blunder": "큰 실수", "unclassified": "평가 제외"}
+	var grades := {"brilliant": "탁월수", "best": "최선수", "good": "좋은 수", "inaccuracy": "부정확한 수", "mistake": "실수", "blunder": "큰 실수", "unclassified": "평가 제외"}
 	for key in grades:
 		var caption := Label.new()
 		caption.text = grades[key]
@@ -700,7 +709,13 @@ func _ready() -> void:
 	board_row.add_theme_constant_override("separation", 10)
 	column.add_child(board_row)
 	board_row.add_child(advantage_bar)
-	board_row.add_child(grid)
+	var board_stack := MarginContainer.new()
+	board_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	board_row.add_child(board_stack)
+	board_stack.add_child(grid)
+	board_stack.add_child(review_overlay)
+	review_overlay.board = grid
+	grid.sort_children.connect(review_overlay.queue_redraw)
 	column.add_child(compact_review_footer)
 	compact_review_footer.add_theme_constant_override("separation", 8)
 	compact_move.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -716,10 +731,11 @@ func _ready() -> void:
 		review_steps.add_child(step_button)
 	compact_previous.pressed.connect(func(): show_review(view_ply() - 1))
 	compact_next.pressed.connect(func(): show_review(view_ply() + 1))
-	compact_moves.custom_minimum_size.y = 46
-	compact_moves.fit_to_longest_item = false
-	compact_moves.item_selected.connect(func(index: int): show_review(index))
-	compact_review_footer.add_child(compact_moves)
+	compact_resume.text = "재개"
+	compact_resume.custom_minimum_size.y = 56
+	compact_resume.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	compact_resume.pressed.connect(resume_review)
+	review_steps.add_child(compact_resume)
 	compact_analyze.text = "수 평가 다시 분석"
 	compact_analyze.pressed.connect(request_compact_analysis)
 	compact_review_footer.add_child(compact_analyze)
@@ -935,6 +951,9 @@ func _ready() -> void:
 	api.timeout = 8.0
 	api.request_completed.connect(on_response)
 	add_child(api)
+	branch_api.timeout = 20.0
+	branch_api.request_completed.connect(on_branch_response)
+	add_child(branch_api)
 	timer.wait_time = 0.5
 	timer.timeout.connect(request_state)
 	add_child(timer)
@@ -1340,6 +1359,7 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 			else:
 				message.text = "자유 분석 중 · 초와 한을 번갈아 둘 수 있습니다."
 			schedule_variation_evaluation()
+			apply_branch_selection()
 		render_board()
 		return
 	if current_path in ["review-start", "review-status", "review-latest", "review-cancel", "record-review-start", "record-review-status"]:
@@ -1351,6 +1371,11 @@ func on_response(result: int, code: int, _headers: PackedStringArray, body: Pack
 			message.text = "전체 리뷰 응답 형식이 올바르지 않습니다."
 		else:
 			full_review = payload
+			if int(payload.get("policyVersion", 0)) != 2:
+				full_review = {}
+				record_error = "수 평가 기준이 변경되었습니다. 서버 업데이트 후 다시 분석해 주세요."
+				render_board()
+				return
 			if payload.status == "running":
 				message.text = "전체 리뷰 분석 중 · %d/%d수" % [int(payload.completed), int(payload.total)]
 			elif payload.status == "complete":
@@ -1529,6 +1554,8 @@ func valid_imported_review(payload: Variant) -> bool:
 	var imported_review: Variant = payload.get("review")
 	if not game is Dictionary or not imported_review is Dictionary:
 		return false
+	if int(imported_review.get("policyVersion", 0)) != 2:
+		return false
 	if int(game.get("revision", -1)) != int(state.get("revision", -2)) or game.get("initialFen", "") != state.get("initialFen", ""):
 		return false
 	if game.get("moves", []) != state.get("moves", []) or imported_review.get("status", "") != "complete":
@@ -1556,7 +1583,7 @@ func valid_imported_review_entry(value: Variant, index: int) -> bool:
 	if split_move(str(item.get("recommendedMove", ""))).size() != 2 or not item.get("classification") is Dictionary or not item.get("analysis") is Dictionary:
 		return false
 	var classification: Dictionary = item.classification
-	if not classification.get("key", "") in ["best", "excellent", "good", "inaccuracy", "mistake", "blunder", "unclassified"] or str(classification.get("label", "")) == "":
+	if not classification.get("key", "") in ["brilliant", "best", "excellent", "good", "inaccuracy", "mistake", "blunder", "unclassified"] or str(classification.get("label", "")) == "":
 		return false
 	if not item.get("prediction") is Dictionary or str(item.get("beforeFen", "")) == "" or str(item.get("recommendedFen", "")) == "":
 		return false
@@ -1645,7 +1672,17 @@ func refresh_offline_variation() -> void:
 	selected = ""
 	message.text = "기기 자유 분석 · 초와 한을 번갈아 둘 수 있습니다."
 	schedule_variation_evaluation()
+	apply_branch_selection()
 	render_board()
+
+func apply_branch_selection() -> void:
+	if branch_first_square == "":
+		return
+	var square := branch_first_square
+	var piece := branch_first_piece
+	branch_first_square = ""
+	branch_first_piece = ""
+	choose(square, piece)
 
 func start_retry() -> void:
 	if pending or review.is_empty() or not variation.is_empty() or view_ply() < 1:
@@ -1719,6 +1756,13 @@ func resume_review() -> void:
 	render_board()
 
 func clear_variation() -> void:
+	branch_api.cancel_request()
+	branch_busy = false
+	branch_fen = ""
+	branch_moves = []
+	branch_entry = {}
+	branch_error = ""
+	branch_first_square = ""
 	variation_evaluation_target = ""
 	variation_evaluation = {}
 	variation = {}
@@ -1726,15 +1770,41 @@ func clear_variation() -> void:
 	variation_moves = []
 
 func schedule_variation_evaluation() -> void:
+	branch_api.cancel_request()
+	branch_entry = {}
+	branch_error = ""
 	variation_evaluation = {}
-	variation_evaluation_target = str(variation.get("fen", ""))
-	if variation.get("outcome", {}).get("over", false):
-		variation_evaluation_target = ""
+	variation_evaluation_target = ""
+	branch_fen = str(variation.get("fen", ""))
+	branch_moves = variation.get("moves", []).duplicate()
+	branch_busy = true
+	var url := endpoint.text.strip_edges().trim_suffix("/")
+	var error := branch_api.request(url + "/api/review-position", ["Content-Type: application/json"], HTTPClient.METHOD_POST,
+		JSON.stringify({"initialFen": variation.initialFen, "moves": branch_moves, "revision": state.revision}))
+	if error != OK:
+		branch_busy = false
+		branch_error = "분석 서버에 연결하지 못했습니다."
+
+func on_branch_response(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	branch_busy = false
+	if variation.is_empty() or variation.fen != branch_fen or variation.moves != branch_moves:
 		return
-	if device_engine.busy():
-		device_engine.cancel()
-		return
-	start_variation_evaluation()
+	var payload = JSON.parse_string(body.get_string_from_utf8())
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200 or not payload is Dictionary:
+		branch_error = "분석 연결 실패 · 다시 두거나 재개해 주세요."
+	else:
+		if payload.get("fen", "") != branch_fen or payload.get("moves", []) != branch_moves:
+			return
+		branch_entry = payload.entry if payload.get("entry") is Dictionary and not variation_moves.is_empty() else {}
+		variation_evaluation = payload.evaluation if payload.get("evaluation") is Dictionary else terminal_evaluation(payload.get("outcome", {}))
+	render_board()
+
+func terminal_evaluation(outcome: Dictionary) -> Dictionary:
+	if not outcome.get("over", false):
+		return {}
+	if outcome.get("winner") == null:
+		return {"unit": "cp", "cho": 0}
+	return {"unit": "mate", "cho": 1 if outcome.winner == "cho" else -1}
 
 func start_variation_evaluation() -> void:
 	if variation.is_empty() or variation_evaluation_target == "" or not device_engine.available() or device_engine.busy():
@@ -2082,7 +2152,17 @@ func pass_turn() -> void:
 			return
 
 func choose(square: String, piece: String) -> void:
-	if pending or (not review.is_empty() and variation.is_empty()):
+	if pending:
+		return
+	if not review.is_empty() and variation.is_empty():
+		if home_section != "review" or local_match_active() or review.get("outcome", {}).get("over", false):
+			return
+		var own_piece: bool = piece != "" and ((piece == piece.to_upper()) == (review.turn == "cho"))
+		if not own_piece:
+			return
+		branch_first_square = square
+		branch_first_piece = piece
+		start_variation()
 		return
 	var position: Dictionary = variation if not variation.is_empty() else state
 	if selected != "" and selected != square and position.legalMoves.has(selected + square):
@@ -2162,39 +2242,36 @@ func update_compact_review() -> void:
 	var total: int = state.get("moves", []).size()
 	compact_previous.disabled = pending or review.is_empty() or ply <= 0
 	compact_next.disabled = pending or review.is_empty() or ply >= total
-	compact_moves.disabled = pending or review.is_empty()
-	compact_moves.clear()
-	compact_moves.add_item("시작 배치")
-	for index in range(total):
-		compact_moves.add_item("%d수 · %s · %s" % [index + 1, "초" if index % 2 == 0 else "한", readable_move(str(state.moves[index]))])
-	compact_moves.select(clampi(ply, 0, total))
+	var branching := not variation.is_empty()
+	compact_previous.visible = not branching
+	compact_next.visible = not branching
+	compact_resume.visible = branching
+	compact_resume.disabled = pending
 	compact_move.text = "시작 배치 · 0 / %d수" % total if ply == 0 else "%s · %d / %d수" % [readable_move(str(state.moves[ply - 1])), ply, total]
-	var entry := cached_review_result(ply)
-	var labels := {"best": "최선", "excellent": "탁월", "good": "좋은 수", "inaccuracy": "부정확", "mistake": "실수", "blunder": "큰 실수", "unclassified": "평가 제외"}
+	var entry := branch_entry if branching else cached_review_result(ply)
+	var labels := {"brilliant": "탁월", "best": "최선", "excellent": "정확", "good": "좋은 수", "inaccuracy": "부정확", "mistake": "실수", "blunder": "큰 실수", "unclassified": "평가 제외"}
 	compact_grade.text = "시작 배치" if ply == 0 else str(labels.get(entry.get("classification", {}).get("key", ""), "미분석"))
+	if branching:
+		compact_move.text = "직접 두기 · %d수에서 %d수 진행" % [variation_start_ply, variation_moves.size()]
+		compact_grade.text = "분석 중…" if branch_busy else str(labels.get(entry.get("classification", {}).get("key", ""), "직접 두기"))
 	compact_grade.add_theme_color_override("font_color", Color("b46955") if entry.get("classification", {}).get("key", "") in ["inaccuracy", "mistake", "blunder"] else Color("6c8060"))
-	var evaluation := compact_evaluation(entry, "after")
-	if ply == 0:
+	var evaluation := variation_evaluation if branching else compact_evaluation(entry, "after")
+	if not branching and ply == 0:
 		evaluation = compact_evaluation(cached_review_result(1), "before")
+	elif not branching and ply == total and not state.is_empty() and state.outcome.over:
+		evaluation = terminal_evaluation(state.outcome)
+	var before := compact_evaluation(entry, "before")
 	var flipped: bool = state.get("mode", "") == "ai" and state.get("humanSide", "") == "han"
-	advantage_bar.set_evaluation(evaluation, flipped)
-	if advantage_bar.available:
-		var value := float(evaluation.cho)
-		if evaluation.unit == "mate":
-			compact_advantage.text = "%s 강제승패 수순" % ("초" if value > 0 else "한")
-		else:
-			compact_advantage.text = "대등" if absf(value) < 30 else ("초 우세" if value > 0 else "한 우세")
-			compact_advantage.text += " · 초 관점 %+.2f" % (value / 100.0)
-		compact_advantage.text += " · 엔진 추정"
-	elif offline_local:
-		compact_advantage.text = "기기 저장 기보 · 수 평가 미제공"
-	elif full_review.get("status", "") == "running":
-		compact_advantage.text = "수 평가 분석 중 · %d / %d" % [int(full_review.get("completed", 0)), total]
-	elif local_match_active():
-		compact_advantage.text = "진행 중인 대국 · 수 평가는 종료 후 제공"
-	else:
-		compact_advantage.text = "수 평가 없음" if not pending else "기보를 불러오는 중…"
-	compact_analyze.visible = not offline_local and not local_match_active() and total > 0 and full_review.get("status", "") not in ["running", "complete"]
+	advantage_bar.set_evaluation(evaluation, flipped, before)
+	compact_advantage.text = branch_error if branching else ""
+	compact_advantage.visible = compact_advantage.text != ""
+	var grade := str(entry.get("classification", {}).get("key", ""))
+	var played := split_move(str(entry.get("playedMove", "")))
+	var arrow := str(entry.get("recommendedMove", "")) if grade not in ["", "best", "brilliant"] else ""
+	review_overlay.visible = screen_mode == "home" and home_section == "review"
+	review_overlay.set_markers(arrow, played[1] if played.size() == 2 else "", grade)
+	review_overlay.tooltip_text = "초록 화살표: 직전 위치에서의 최선 수"
+	compact_analyze.visible = not branching and not offline_local and not local_match_active() and total > 0 and full_review.get("status", "") not in ["running", "complete"]
 	compact_analyze.disabled = pending
 
 func compact_evaluation(entry: Dictionary, phase: String) -> Dictionary:
@@ -2256,8 +2333,8 @@ func render_position(state: Dictionary) -> void:
 	var live_last_move := ""
 	if screen_mode == "play" and review.is_empty() and variation.is_empty() and analysis_preview.is_empty() and not state.moves.is_empty():
 		live_last_move = str(state.moves[-1])
-	elif home_section == "review" and not review.is_empty() and not review.moves.is_empty():
-		live_last_move = str(review.moves[-1])
+	elif home_section == "review" and not state.moves.is_empty():
+		live_last_move = str(state.moves[-1])
 	var live_last_pair := split_move(live_last_move)
 	for row in range(10):
 		for file in range(9):
@@ -2320,7 +2397,8 @@ func render_position(state: Dictionary) -> void:
 				button.modulate = Color.WHITE
 				for style in ["normal", "disabled", "hover", "pressed"]:
 					button.add_theme_stylebox_override(style, board_box(Color(1, 1, 1, 0.72)))
-			button.disabled = (screen_mode == "home" and home_section == "review") or (not review.is_empty() and variation.is_empty()) or (pending and current_path != "game") or ai_turn or state.outcome.over
+			var interactive_review := screen_mode == "home" and home_section == "review" and not local_match_active()
+			button.disabled = (not review.is_empty() and variation.is_empty() and not interactive_review) or (pending and current_path != "game") or (ai_turn and not interactive_review) or state.outcome.over
 			button.pressed.connect(choose.bind(square, piece))
 			grid.add_child(button)
 			squares[square] = button
@@ -2365,7 +2443,7 @@ func render_position(state: Dictionary) -> void:
 		if variation_evaluation.is_empty():
 			score_panel.text += " · 기기 형세 계산 중…" if device_engine.available() else " · 기기 형세 사용 불가"
 		elif variation_evaluation.unit == "cp":
-			score_panel.text += " · 기기 고전평가 초 %+.0fcp · 깊이 %d" % [float(variation_evaluation.cho), int(variation_evaluation.depth)]
+			score_panel.text += " · 초 %+.0fcp" % float(variation_evaluation.cho)
 		else:
 			score_panel.text += " · 기기 고전평가 강제승패 %s" % str(variation_evaluation.cho)
 	for button in action_buttons:

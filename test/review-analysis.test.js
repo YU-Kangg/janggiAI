@@ -58,7 +58,7 @@ test('짧은 탐색 오차로 착수 후 평가가 좋아지면 손실은 0으�
   assert.equal(result.analysis.rawLossCp, -5);
   assert.equal(result.analysis.lossCp, 0);
   assert.equal(result.analysis.lossReason, null);
-  assert.equal(result.classification.key, 'excellent');
+  assert.equal(result.classification.key, 'best');
 });
 
 test('대국을 끝낸 수는 착수 후 엔진을 호출하지 않고 평가 손실 사유를 반환', async () => {

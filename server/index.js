@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { Game } from './game.js';
+import { Game, reviewEntry } from './game.js';
 import { fileStorage } from './storage.js';
 import { randomUUID } from 'node:crypto';
 import { initialFen, rulePosition } from './rules.js';
@@ -33,19 +33,44 @@ export function createServer({ game = new Game() } = {}) {
         res.writeHead(200, { 'Content-Type': `${type}; charset=utf-8` });
         return res.end(body);
       }
-      const action = /^\/api\/(move|undo|reset|resign|draw|recommend|cancel-ai|resume-ai|review|review-analysis|review-start|review-status|review-latest|review-cancel|record-review-start|record-review-status|variation)$/.exec(req.url)?.[1];
+      const action = /^\/api\/(move|undo|reset|resign|draw|recommend|cancel-ai|resume-ai|review|review-analysis|review-start|review-status|review-latest|review-cancel|record-review-start|record-review-status|review-position|variation)$/.exec(req.url)?.[1];
       if (!(req.method === 'GET' && req.url === '/api/game') && !(req.method === 'POST' && action)) {
         return json(404, { error: '요청 경로를 찾을 수 없습니다.' });
       }
       let body = '';
       for await (const chunk of req) {
         body += chunk;
-        if (body.length > (action === 'record-review-start' ? 32768 : 2048)) return json(413, { error: '요청이 너무 큽니다.' });
+        if (body.length > (['record-review-start', 'review-position'].includes(action) ? 32768 : 2048)) return json(413, { error: '요청이 너무 큽니다.' });
       }
       let data = {};
       try { data = body ? JSON.parse(body) : {}; }
       catch { return json(400, { error: '요청 형식이 올바르지 않습니다.' }); }
       if (!data || typeof data !== 'object' || Array.isArray(data)) return json(400, { error: '요청 형식이 올바르지 않습니다.' });
+      if (action === 'review-position') {
+        if (!Array.isArray(data.moves) || data.moves.length > 1152 || data.moves.some(move => typeof move !== 'string')
+          || typeof data.initialFen !== 'string' || data.initialFen.length > 160) return json(400, { error: '분기 기보가 올바르지 않습니다.' });
+        let position;
+        try { position = rulePosition(data.moves, data.initialFen); }
+        catch { return json(400, { error: '합법적인 분기 기보가 아닙니다.' }); }
+        const controller = new AbortController();
+        const cancel = () => { if (!res.writableEnded) controller.abort(); };
+        res.on('close', cancel);
+        try {
+          const current = position.outcome.over ? null : await game.recommendMove(data.moves, data.initialFen, { signal: controller.signal });
+          let entry = null;
+          if (data.moves.length) {
+            const prefix = data.moves.slice(0, -1);
+            const before = { ...rulePosition(prefix, data.initialFen), moves: prefix, initialFen: data.initialFen };
+            const best = await game.recommendMove(prefix, data.initialFen, { signal: controller.signal });
+            if (!before.legalMoves.includes(best.move)) throw new Error('합법적이지 않은 추천 수입니다.');
+            entry = reviewEntry({ revision: data.revision, ply: data.moves.length, position: before,
+              result: best, afterPosition: position, afterResult: current, playedMove: data.moves.at(-1) });
+          }
+          if (current && !position.legalMoves.includes(current.move)) throw new Error('합법적이지 않은 추천 수입니다.');
+          return json(200, { fen: position.fen, moves: data.moves, evaluation: current?.analysis?.evaluation ?? null,
+            outcome: position.outcome, recommendedMove: current?.move ?? null, entry, policyVersion: 2 });
+        } finally { res.off('close', cancel); }
+      }
       if (action === 'record-review-start') {
         if (!data.setup || !Array.isArray(data.moves) || !data.moves.length || data.moves.length > 1024
           || data.moves.some(move => typeof move !== 'string') || !Number.isSafeInteger(data.revision) || data.revision < 0) {

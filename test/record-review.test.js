@@ -41,8 +41,8 @@ test('기기 기보를 별도 Stockfish 작업으로 분석하고 서버 대국�
   assert.equal(job.status, 'complete');
   assert.equal(job.completed, 2);
   assert.equal(job.revision, 12);
-  assert.equal(job.summary.counts.excellent, 1);
-  assert.equal(job.summary.counts.best, 1);
+  assert.equal(job.summary.counts.brilliant, 0);
+  assert.equal(job.summary.counts.best, 2);
   assert.deepEqual(calls, [[], ['a4b4'], ['a4b4', 'a7b7']]);
   assert.deepEqual(game.snapshot(), before);
   const deviceSetup = { cho: 'nbbn', han: 'nbnb' };

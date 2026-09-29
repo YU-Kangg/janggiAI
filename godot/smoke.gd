@@ -126,8 +126,28 @@ func run() -> void:
 	app.compact_previous.pressed.emit()
 	await wait_idle()
 	check(app.view_ply() == 1 and app.state.fen == live_fen and app.state.moves.size() == 2, "review navigation preserves live game")
+	check(not app.compact_advantage.visible, "advantage prose removed above board")
+	check(not app.compact_resume.visible and app.compact_next.visible, "record navigation shows step controls")
+	app.squares["a7"].pressed.emit()
+	await wait_idle()
+	check(not app.variation.is_empty() and app.selected == "a7", "touching review piece enters editable branch")
+	app.squares["b7"].pressed.emit()
+	await wait_idle()
+	check(app.compact_resume.visible and not app.compact_next.visible and not app.compact_previous.visible, "branch replaces steps with resume")
+	for attempt in range(160):
+		if not app.branch_busy:
+			break
+		await create_timer(0.1).timeout
+	check(app.branch_error == "" and not app.branch_entry.is_empty(), "branch move receives Stockfish classification")
+	check(app.advantage_bar.available and app.advantage_bar.score_text != "—", "branch updates numeric advantage")
+	check(app.review_overlay.marked_square == "b7", "move grade badge follows branch destination")
+	check(app.state.fen == live_fen and app.state.moves.size() == 2, "branch preserves stored game")
+	app.compact_resume.pressed.emit()
+	check(app.variation.is_empty() and app.view_ply() == 1 and not app.compact_resume.visible, "resume restores original review position")
 	app.advantage_bar.set_evaluation({"unit": "cp", "cho": 300}, false)
 	check(app.advantage_bar.cho_share > 0.5, "positive cho score fills more blue")
+	app.advantage_bar.set_evaluation({"unit": "cp", "cho": 150}, false, {"unit": "cp", "cho": 100})
+	check(app.advantage_bar.score_text == "+1.5" and app.advantage_bar.delta_text == "+0.5", "bar prints score and per-move change")
 	app.advantage_bar.set_evaluation({"unit": "cp", "cho": -300}, true)
 	check(app.advantage_bar.cho_share < 0.5 and app.advantage_bar.flipped, "negative score favors Han with flipped board")
 	app.advantage_bar.set_evaluation({}, false)

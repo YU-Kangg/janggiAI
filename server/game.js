@@ -1,12 +1,12 @@
 import { recommend } from './engine.js';
-import { rulePosition, initialFen, defaultSetup } from './rules.js';
+import { rulePosition, initialFen, defaultSetup, materialPoints } from './rules.js';
 
 const fail = (message, status = 409) => Object.assign(new Error(message), { status });
 
 export function classifyMove(match, lossCp) {
   if (match) return { key: 'best', label: '최선', experimental: true, basis: 'exact-match' };
   if (!Number.isFinite(lossCp)) return { key: 'unclassified', label: '분류 제외', experimental: true, basis: 'unavailable' };
-  if (lossCp <= 15) return { key: 'excellent', label: '매우 좋음', experimental: true, basis: 'loss-cp' };
+  if (lossCp <= 15) return { key: 'best', label: '최선', experimental: true, basis: 'loss-cp' };
   if (lossCp <= 40) return { key: 'good', label: '좋음', experimental: true, basis: 'loss-cp' };
   if (lossCp <= 80) return { key: 'inaccuracy', label: '부정확', experimental: true, basis: 'loss-cp' };
   if (lossCp <= 160) return { key: 'mistake', label: '실수', experimental: true, basis: 'loss-cp' };
@@ -14,7 +14,7 @@ export function classifyMove(match, lossCp) {
 }
 
 export function summarizeReview(results) {
-  const counts = { best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0, unclassified: 0 };
+  const counts = { brilliant: 0, best: 0, excellent: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0, unclassified: 0 };
   const sideStats = {
     cho: { total: 0, lossTotal: 0, lossCount: 0, keyMoves: 0 },
     han: { total: 0, lossTotal: 0, lossCount: 0, keyMoves: 0 },
@@ -69,7 +69,23 @@ export function summarizeReview(results) {
   };
 }
 
-function reviewEntry({ revision, ply, position, result, afterPosition, afterResult, playedMove }) {
+// A conservative, inspectable sacrifice criterion. High advantage alone never qualifies.
+export function sacrificeEvidence(beforeFen, continuationFens, side, evaluation, winningTerminal = false) {
+  const sign = side === 'cho' ? 1 : -1;
+  const balance = fen => { const points = materialPoints(fen); return sign * (points.cho - points.han); };
+  const baseline = balance(beforeFen);
+  const balances = continuationFens.map(balance);
+  const sacrificeIndex = balances.findIndex(value => value <= baseline - 3);
+  if (sacrificeIndex < 0 || sacrificeIndex > 1) return null;
+  const later = balances.slice(sacrificeIndex + 1);
+  const forcedWin = winningTerminal || (evaluation?.unit === 'mate' && sign * evaluation.cho > 0);
+  const sound = evaluation?.unit === 'cp' && sign * evaluation.cho >= -30;
+  const materialReward = later.some(value => value >= baseline + 3);
+  if (!forcedWin && !(sound && materialReward)) return null;
+  return { basis: forcedWin ? 'sacrifice-forced-win' : 'sacrifice-material-gain', sacrificedPoints: baseline - balances[sacrificeIndex] };
+}
+
+export function reviewEntry({ revision, ply, position, result, afterPosition, afterResult, playedMove }) {
   const beforeEvaluation = result.analysis?.evaluation;
   const afterEvaluation = afterResult?.analysis?.evaluation;
   let rawLossCp = null;
@@ -95,9 +111,29 @@ function reviewEntry({ revision, ply, position, result, afterPosition, afterResu
     predictionFens.push(rulePosition(predictionHistory, position.initialFen).fen);
   }
   const match = playedMove === result.move;
+  let classification = classifyMove(match, lossCp);
+  const moverSign = position.turn === 'cho' ? 1 : -1;
+  const alreadyWinning = beforeEvaluation?.unit === 'cp' && moverSign * beforeEvaluation.cho >= 600
+    && !(afterEvaluation?.unit === 'mate' && moverSign * afterEvaluation.cho > 0);
+  if (classification.key === 'best' && !alreadyWinning) {
+    const continuation = [afterPosition.fen];
+    const line = [...position.moves, playedMove];
+    let terminal = afterPosition.outcome;
+    for (const move of afterResult?.analysis?.pv ?? []) {
+      const current = rulePosition(line, position.initialFen);
+      if (current.outcome.over || !current.legalMoves.includes(move)) break;
+      line.push(move);
+      const next = rulePosition(line, position.initialFen);
+      continuation.push(next.fen);
+      terminal = next.outcome;
+    }
+    const sacrifice = sacrificeEvidence(position.fen, continuation, position.turn, afterEvaluation,
+      terminal.over && terminal.winner === position.turn);
+    if (sacrifice) classification = { key: 'brilliant', label: '탁월', experimental: true, ...sacrifice };
+  }
   return {
     revision, ply, side: position.turn, playedMove,
-    recommendedMove: result.move, match, classification: classifyMove(match, lossCp),
+    recommendedMove: result.move, match, classification,
     beforeFen: position.fen, recommendedFen: recommendedPosition.fen,
     prediction: { moves: predictionMoves, fens: predictionFens },
     budgetMs: result.budgetMs, source: result.source,
@@ -263,7 +299,7 @@ export class Game {
   fullReviewSnapshot(job = this.fullReviewJob) {
     if (!job) return null;
     return {
-      jobId: job.id, revision: job.revision, status: job.status,
+      jobId: job.id, revision: job.revision, status: job.status, policyVersion: 2,
       completed: job.completed, total: job.total, results: [...job.results],
       summary: summarizeReview(job.results), error: job.error,
     };
